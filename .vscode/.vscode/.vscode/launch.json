@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FastAPI (uvicorn --reload)",
+      "type": "python",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["services.api.app.main:app", "--reload"],
+      "jinja": false,
+      "justMyCode": true,
+      "console": "integratedTerminal"
+    }
+  ]
+}
+
+
+

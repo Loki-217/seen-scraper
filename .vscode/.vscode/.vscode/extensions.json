@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-toolsai.jupyter",
+    "github.vscode-pull-request-github",
+    "editorconfig.editorconfig",
+    "humao.rest-client"
+  ]
+}
