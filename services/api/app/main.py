@@ -1,21 +1,46 @@
 # services/api/app/main.py
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from typing import Optional, List
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List
-
-from .runner import run_preview, RunnerError
-
-# 新增：本地 HTML 解析
-from bs4 import BeautifulSoup
-import soupsieve as sv
-
 
 from .settings import settings
 from .logging_conf import setup_logging
 
+# 任务路由 & DB
+from .db import init_db
+from .routers.jobs import router as jobs_router
+
+# 远程页预览（Playwright 封装）
+from .runner import run_preview, RunnerError
+
+# 本地 HTML 解析预览
+from bs4 import BeautifulSoup
+import soupsieve as sv
+from .routers.runs import router as runs_router, router_jobs as runs_jobs_router
+
+# ---------- 应用生命周期 ----------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    init_db()   # 确保表已创建
+    yield
+    # shutdown（需要清理时可在此处补充）
+
+
+# ---------- 创建应用 ----------
 setup_logging()
-app = FastAPI(title=settings.api_title, version=settings.api_version)
+app = FastAPI(
+    title=settings.api_title,
+    version=settings.api_version,
+    lifespan=lifespan,
+)
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
@@ -23,20 +48,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app = FastAPI(title="SeenScraper API", version="0.0.3")
+# 业务路由
+app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
+app.include_router(runs_jobs_router)                        # /jobs/{id}/run
+app.include_router(runs_router)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
+
+
+# ---------- 健康检查 ----------
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "0.0.3"}
+    return {"ok": True, "version": settings.api_version}
 
-# -------- Playwright 远程页面预览 --------
+
+# ---------- Playwright 远程页面预览 ----------
 class PlayPreviewReq(BaseModel):
     url: str = Field(..., description="页面 URL")
     selector: str = Field(..., description="CSS 选择器")
@@ -73,7 +99,8 @@ def play_preview(req: PlayPreviewReq):
     except RunnerError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# -------- 本地 HTML + 选择器预览 --------
+
+# ---------- 本地 HTML + 选择器预览 ----------
 class TemplatePreviewReq(BaseModel):
     html: str = Field(..., description="原始 HTML 文本（片段/示例均可）")
     selector: str = Field(..., description="CSS 选择器，如 'article h1'")
@@ -115,6 +142,7 @@ def templates_preview(req: TemplatePreviewReq):
         count=len(nodes),
         samples=samples,
     )
+
 
 if __name__ == "__main__":
     import uvicorn

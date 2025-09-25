@@ -39,3 +39,17 @@ def session_scope() -> Iterator[sessionmaker]:
         raise
     finally:
         session.close()
+# 末尾附近加
+from typing import Generator
+from sqlalchemy.orm import Session
+
+def get_session() -> Generator[Session, None, None]:
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

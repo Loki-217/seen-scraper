@@ -1,10 +1,9 @@
+# services/api/app/models.py
 from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import (
-    Integer, String, Text, DateTime, ForeignKey, UniqueConstraint
-)
+from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -24,15 +23,21 @@ class Job(Base):
     max_pages: Mapped[int] = mapped_column(Integer, default=1)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # 关系
     selectors: Mapped[List["Selector"]] = relationship(
-        back_populates="job", cascade="all, delete-orphan", order_by="Selector.order_no"
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="Selector.order_no",
+        lazy="selectin",
     )
+    # ⬅⬅ 你缺的就是这个 runs
     runs: Mapped[List["Run"]] = relationship(
-        back_populates="job", cascade="all, delete-orphan", order_by="Run.id.desc()"
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="Run.id.desc()",
+        lazy="selectin",
     )
 
 
@@ -69,9 +74,14 @@ class Run(Base):
     settings_json: Mapped[Optional[str]] = mapped_column(Text, default=None)
     stats_json: Mapped[Optional[str]] = mapped_column(Text, default=None)
 
+    # 与 Job 的反向关系，注意 back_populates 必须对应 Job 里的 "runs"
     job: Mapped["Job"] = relationship(back_populates="runs")
+
     results: Mapped[List["Result"]] = relationship(
-        back_populates="run", cascade="all, delete-orphan", order_by="Result.row_idx.asc()"
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="Result.row_idx.asc()",
+        lazy="selectin",
     )
 
 

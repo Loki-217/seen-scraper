@@ -19,43 +19,45 @@ def list_jobs(s: Session, limit: int = 50, offset: int = 0) -> List[Job]:
     return list(s.scalars(select(Job).offset(offset).limit(limit)))
 
 def create_or_update_job(s: Session, payload, overwrite: bool = False) -> Job:
-    """
-    payload: schemas.JobCreate
-    如果 name 已存在：
-      - overwrite=False -> ValueError
-      - overwrite=True  -> 更新 Job 基本信息 + 覆盖 selectors
-    """
     job = get_job_by_name(s, payload.name)
+
     if job and not overwrite:
         raise ValueError(f"job '{payload.name}' already exists")
 
+    # 新建或取已有
     if not job:
         job = Job(name=payload.name, start_url=payload.start_url)
         s.add(job)
+        s.flush()  # 确保有 job.id
 
-    # 基本字段
+    # 覆盖基本字段
     job.start_url = payload.start_url
     job.description = payload.description
     job.status = payload.status
     job.pager_selector = payload.pager.selector
     job.pager_attr = payload.pager.attr
     job.max_pages = payload.pager.max_pages
-    job.updated_at = datetime.utcnow()
 
-    # 覆盖 selectors
-    job.selectors.clear()
-    for i, sel in enumerate(payload.selectors):
-        job.selectors.append(
-            Selector(
-                name=sel.name,
-                css=sel.css,
-                attr=sel.attr,
-                limit=sel.limit,
-                required=1 if sel.required else 0,
-                regex=sel.regex,
-                order_no=sel.order_no if sel.order_no else i,
-            )
+    # 关键：覆盖前先删掉旧的 selectors，避免唯一约束冲突
+    if overwrite:
+        s.execute(delete(Selector).where(Selector.job_id == job.id))
+        s.flush()
+        job.selectors = []  # 清空关系缓存
+
+    # 重建 selectors
+    job.selectors.extend([
+        Selector(
+            name=sel.name,
+            css=sel.css,
+            attr=sel.attr,
+            limit=sel.limit,
+            required=1 if sel.required else 0,
+            regex=sel.regex,
+            order_no=(sel.order_no if sel.order_no else i),
         )
+        for i, sel in enumerate(payload.selectors)
+    ])
+
     s.flush()
     return job
 
