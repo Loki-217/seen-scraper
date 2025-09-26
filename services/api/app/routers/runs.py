@@ -6,19 +6,16 @@ import json
 
 import httpx
 from bs4 import BeautifulSoup
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import select
 
-from ..db import get_session
+from ..db import get_session, session_scope
 from .. import models, crud, schemas
-from typing import List as _List
-from sqlalchemy import select, desc
-import json as _json
 
-
-# 主路由：/runs 开头（查看 run、取结果）
+# 主路由：/runs 开头（查看 run、取结果、列表）
 router = APIRouter(prefix="/runs", tags=["runs"])
-# 别名路由：/jobs/{id}/run（按你的习惯也能用）
+# 别名路由：/jobs/{id}/run（启动运行）
 router_jobs = APIRouter(prefix="/jobs", tags=["runs"])
 
 
@@ -31,6 +28,7 @@ def _extract_by_selectors(
     soup = BeautifulSoup(html, "lxml")
     out: Dict[str, List[str]] = {}
 
+    # 确保按 order_no 稳定顺序
     for sel in sorted(selectors, key=lambda x: x.order_no or 0):
         css = sel.css or ""
         attr = (sel.attr or "text").lower()
@@ -48,53 +46,74 @@ def _extract_by_selectors(
     return out
 
 
-# ---------- 启动一次运行（最小同步版） ----------
-@router.post("/jobs/{job_id}/run")
-def run_job(job_id: int, req: schemas.JobPreviewReq, s: Session = Depends(get_session)):
+# ---------- 后台任务主体 ----------
+def _run_job_task(run_id: int, job_id: int, url: str, limit: int) -> None:
+    # 自己管理会话，避免使用请求线程的 Session
+    with session_scope() as s:
+        # 预加载 selectors，避免懒加载
+        stmt = (
+            select(models.Job)
+            .options(selectinload(models.Job.selectors))
+            .where(models.Job.id == job_id)
+        )
+        job = s.execute(stmt).scalar_one_or_none()
+        if not job:
+            crud.finish_run(s, run_id, status="failed", stats_json=json.dumps({"error": "job not found"}))
+            return
+
+        try:
+            with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+                r = client.get(url)
+                r.raise_for_status()
+                html = r.text
+
+            samples = _extract_by_selectors(html, job.selectors, limit_default=limit)
+
+            rows_max = 0
+            for field, arr in samples.items():
+                rows_max = max(rows_max, len(arr))
+                for idx, val in enumerate(arr):
+                    crud.add_result(
+                        s,
+                        run_id=run_id,
+                        field=field,
+                        row_idx=idx,
+                        value=val,
+                        url=url,
+                    )
+
+            stats = {"rows": rows_max, "pages": 1}
+            crud.finish_run(s, run_id, status="succeeded", stats_json=json.dumps(stats))
+        except Exception as e:
+            crud.finish_run(s, run_id, status="failed", stats_json=json.dumps({"error": str(e)}))
+
+
+# ---------- 启动一次运行（后台任务版） ----------
+@router.post("/jobs/{job_id}/run", status_code=202)
+def run_job_async(
+    job_id: int,
+    req: schemas.JobPreviewReq,
+    background: BackgroundTasks,
+    s: Session = Depends(get_session),
+):
     job = s.get(models.Job, job_id)
     if not job:
         raise HTTPException(404, "job not found")
 
     url = req.url or job.start_url
+    # 立刻创建 run（标记为 running 或 queued 都可以；为了简单，这里直接 running）
     run = crud.create_run(s, job_id=job.id, status="running")
 
-    try:
-        # 抓取页面
-        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
-            r = client.get(url)
-            r.raise_for_status()
-            html = r.text
+    # 丢给后台跑，不阻塞请求
+    background.add_task(_run_job_task, run.id, job.id, url, req.limit)
 
-        # 解析并提取样本
-        samples = _extract_by_selectors(html, job.selectors, limit_default=req.limit)
-
-        # 落库
-        rows_max = 0
-        for field, arr in samples.items():
-            rows_max = max(rows_max, len(arr))
-            for idx, val in enumerate(arr):
-                crud.add_result(
-                    s,
-                    run_id=run.id,
-                    field=field,
-                    row_idx=idx,
-                    value=val,
-                    url=url,
-                )
-
-        stats = {"rows": rows_max, "pages": 1}
-        crud.finish_run(s, run.id, status="succeeded", stats_json=json.dumps(stats))
-        return {"run_id": run.id, "status": "succeeded"}
-
-    except Exception as e:
-        crud.finish_run(s, run.id, status="failed", stats_json=json.dumps({"error": str(e)}))
-        raise HTTPException(400, f"run failed: {e}")
+    return {"run_id": run.id, "status": "queued"}
 
 
 # 别名：支持 POST /jobs/{job_id}/run
-@router_jobs.post("/{job_id}/run")
-def run_job_alias(job_id: int, req: schemas.JobPreviewReq, s: Session = Depends(get_session)):
-    return run_job(job_id, req, s)
+@router_jobs.post("/{job_id}/run", status_code=202)
+def run_job_alias(job_id: int, req: schemas.JobPreviewReq, background: BackgroundTasks, s: Session = Depends(get_session)):
+    return run_job_async(job_id, req, background, s)
 
 
 # ---------- 查看一次运行 ----------
@@ -111,12 +130,11 @@ def get_run(run_id: int, s: Session = Depends(get_session)):
         except Exception:
             stats = None
 
-    # 注意：模型里字段名是 ended_at，这里映射到 schemas.RunOut 的 finished_at（若你.schemas里用 ended_at，就相应改名）
     return schemas.RunOut(
         id=run.id,
         job_id=run.job_id,
         status=run.status,
-        started_at=run.started_at,
+        started_at=getattr(run, "started_at", None),
         finished_at=getattr(run, "ended_at", None),
         stats=stats,
     )
@@ -128,6 +146,11 @@ def get_run_results(run_id: int, s: Session = Depends(get_session)):
     return crud.list_results_rows(s, run_id)
 
 
+# ---------- 运行列表 ----------
+from typing import List as _List
+from sqlalchemy import select as _select, desc as _desc
+import json as _json
+
 @router.get("", response_model=_List[schemas.RunOut])
 def list_runs(
     job_id: int | None = None,
@@ -135,7 +158,7 @@ def list_runs(
     offset: int = 0,
     s: Session = Depends(get_session),
 ):
-    stmt = select(models.Run).order_by(desc(models.Run.id)).offset(offset).limit(limit)
+    stmt = _select(models.Run).order_by(_desc(models.Run.id)).offset(offset).limit(limit)
     if job_id is not None:
         stmt = stmt.where(models.Run.job_id == job_id)
 
