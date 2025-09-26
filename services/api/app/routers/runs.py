@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_session
 from .. import models, crud, schemas
+from typing import List as _List
+from sqlalchemy import select, desc
+import json as _json
+
 
 # 主路由：/runs 开头（查看 run、取结果）
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -122,3 +126,37 @@ def get_run(run_id: int, s: Session = Depends(get_session)):
 @router.get("/{run_id}/results", response_model=Dict[str, List[str]])
 def get_run_results(run_id: int, s: Session = Depends(get_session)):
     return crud.list_results_rows(s, run_id)
+
+
+@router.get("", response_model=_List[schemas.RunOut])
+def list_runs(
+    job_id: int | None = None,
+    limit: int = 20,
+    offset: int = 0,
+    s: Session = Depends(get_session),
+):
+    stmt = select(models.Run).order_by(desc(models.Run.id)).offset(offset).limit(limit)
+    if job_id is not None:
+        stmt = stmt.where(models.Run.job_id == job_id)
+
+    items = s.execute(stmt).scalars().all()
+
+    out: list[schemas.RunOut] = []
+    for r in items:
+        stats = None
+        if getattr(r, "stats_json", None):
+            try:
+                stats = _json.loads(r.stats_json)
+            except Exception:
+                stats = None
+        out.append(
+            schemas.RunOut(
+                id=r.id,
+                job_id=r.job_id,
+                status=r.status,
+                started_at=getattr(r, "started_at", None),
+                finished_at=getattr(r, "ended_at", None),
+                stats=stats,
+            )
+        )
+    return out
