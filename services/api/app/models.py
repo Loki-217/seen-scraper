@@ -1,101 +1,97 @@
 # services/api/app/models.py
 from __future__ import annotations
+
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from .db import Base
+from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
+class Base(DeclarativeBase):
+    """Declarative base for all models."""
+    pass
+
+
+# -------------------- Job --------------------
 class Job(Base):
     __tablename__ = "jobs"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, unique=True, index=True)
-    start_url: Mapped[str] = mapped_column(String)
-    description: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    start_url: Mapped[str] = mapped_column(String(500), nullable=False)
 
-    status: Mapped[str] = mapped_column(String, default="draft")  # draft/active/paused/disabled
-    pager_selector: Mapped[Optional[str]] = mapped_column(String, default=None)
-    pager_attr: Mapped[str] = mapped_column(String, default="href")
-    max_pages: Mapped[int] = mapped_column(Integer, default=1)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    pager_selector: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    pager_attr: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    max_pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    # 关系
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    # relationships
     selectors: Mapped[List["Selector"]] = relationship(
-        back_populates="job",
-        cascade="all, delete-orphan",
-        order_by="Selector.order_no",
-        lazy="selectin",
+        back_populates="job", cascade="all, delete-orphan"
     )
-    # ⬅⬅ 你缺的就是这个 runs
     runs: Mapped[List["Run"]] = relationship(
-        back_populates="job",
-        cascade="all, delete-orphan",
-        order_by="Run.id.desc()",
-        lazy="selectin",
+        back_populates="job", cascade="all, delete-orphan"
     )
 
 
+# -------------------- Selector --------------------
 class Selector(Base):
     __tablename__ = "selectors"
-    __table_args__ = (UniqueConstraint("job_id", "name", name="uix_job_selector_name"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True, nullable=False)
 
-    name: Mapped[str] = mapped_column(String)
-    css: Mapped[str] = mapped_column(Text)
-    attr: Mapped[str] = mapped_column(String, default="text")
-    limit: Mapped[int] = mapped_column(Integer, default=50)
-    required: Mapped[int] = mapped_column(Integer, default=0)  # 0/1
-    regex: Mapped[Optional[str]] = mapped_column(String, default=None)
-    order_no: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    css: Mapped[str] = mapped_column(String(500), nullable=False)
+    attr: Mapped[str] = mapped_column(String(50), default="text", nullable=False)
+    limit: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    regex: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    order_no: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    job: Mapped["Job"] = relationship(back_populates="selectors")
+    job: Mapped[Job] = relationship(back_populates="selectors")
 
 
+# -------------------- Run --------------------
 class Run(Base):
     __tablename__ = "runs"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True, nullable=False)
 
-    status: Mapped[str] = mapped_column(String, default="queued")  # queued/running/succeeded/failed/cancelled
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
-    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
-    error: Mapped[Optional[str]] = mapped_column(Text, default=None)
-    settings_json: Mapped[Optional[str]] = mapped_column(Text, default=None)
-    stats_json: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # 自由统计信息(JSON 字符串)
+    stats_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # 与 Job 的反向关系，注意 back_populates 必须对应 Job 里的 "runs"
-    job: Mapped["Job"] = relationship(back_populates="runs")
-
+    job: Mapped[Job] = relationship(back_populates="runs")
     results: Mapped[List["Result"]] = relationship(
-        back_populates="run",
-        cascade="all, delete-orphan",
-        order_by="Result.row_idx.asc()",
-        lazy="selectin",
+        back_populates="run", cascade="all, delete-orphan"
     )
 
 
+# -------------------- Result --------------------
 class Result(Base):
     __tablename__ = "results"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id"), index=True, nullable=False)
 
-    field: Mapped[str] = mapped_column(String, index=True)  # 与 Selector.name 对应
-    row_idx: Mapped[int] = mapped_column(Integer, index=True)
-    value: Mapped[Optional[str]] = mapped_column(Text, default=None)
-    url: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    # 注意：以下字段名和你的 CRUD 保持一致
+    selector: Mapped[str] = mapped_column(String(100), nullable=False)
+    row_idx: Mapped[int] = mapped_column(Integer, nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    run: Mapped["Run"] = relationship(back_populates="results")
+    run: Mapped[Run] = relationship(back_populates="results")

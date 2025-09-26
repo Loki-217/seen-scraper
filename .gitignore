@@ -3,4 +3,21 @@ __pycache__/
 *.pyc
 .env
 dist/
-node_modules/
+node_modules/# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 本地环境
+.env
+
+# 本地数据 & 导出
+data/*.db
+*.sqlite
+*.db
+run-*.csv
+seen.db
+
+# IDE
+.vscode/
+.idea/

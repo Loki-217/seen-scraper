@@ -1,4 +1,3 @@
-# services/api/app/routers/jobs.py
 from __future__ import annotations
 from typing import List
 
@@ -28,7 +27,6 @@ def _load_job_with_rels(s: Session, job_id: int) -> models.Job | None:
 
 def _to_job_out(job: models.Job) -> schemas.JobOut:
     """在会话关闭前将 ORM 转成 Pydantic。"""
-    # 触发关系访问，确保已加载
     _ = list(job.selectors or [])
     _ = list(job.runs or [])
     return schemas.JobOut.model_validate(job, from_attributes=True)
@@ -101,8 +99,8 @@ def preview_job(
                 url=url,
                 selector=sel.css,
                 attr=sel.attr,
-                wait_selector=req.wait_selector,
-                timeout_ms=req.timeout_ms,
+                wait_selector=req.wait_selector,   # 现在 schema 里有
+                timeout_ms=req.timeout_ms,         # ✅ 关键：schema 已补
                 limit=min(req.limit, sel.limit or req.limit),
             )
             out[sel.name] = data["samples"]
@@ -110,4 +108,3 @@ def preview_job(
             out[sel.name] = [f"ERROR: {e}"]
 
     return schemas.JobPreviewResp(url=url, samples=out)
-
