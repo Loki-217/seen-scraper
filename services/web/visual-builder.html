@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>SeenScraper - 可视化爬虫构建器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .url-container {
+            flex: 1;
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .url-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: rgba(255,255,255,0.95);
+        }
+        
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+        
+        .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+        }
+        
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        .preview-pane {
+            flex: 1;
+            position: relative;
+            background: white;
+            margin: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .preview-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .config-pane {
+            width: 420px;
+            background: white;
+            margin: 1rem 1rem 1rem 0;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .config-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #e0e0e0;
+            background: linear-gradient(135deg, #f5f5f5, #ffffff);
+            border-radius: 12px 12px 0 0;
+        }
+        
+        .config-header h2 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+        
+        .tips {
+            background: #fef3c7;
+            border-left: 4px solid #fbbf24;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            color: #92400e;
+        }
+        
+        .fields-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+        
+        .field-item {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border: 2px solid transparent;
+            transition: all 0.3s;
+            position: relative;
+        }
+        
+        .field-item:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102,126,234,0.2);
+        }
+        
+        .field-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .field-name {
+            flex: 1;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.95rem;
+        }
+        
+        .field-type {
+            padding: 0.25rem 0.5rem;
+            background: #667eea;
+            color: white;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        
+        .btn-remove {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+        }
+        
+        .field-info {
+            background: white;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: #666;
+        }
+        
+        .field-info code {
+            background: #f0f0f0;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+        }
+        
+        .action-buttons {
+            padding: 1rem;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .hidden { display: none !important; }
+        
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: #999;
+        }
+        
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        .status-message {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 2000;
+            display: none;
+        }
+        
+        .status-success {
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .status-error {
+            border-left: 4px solid #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 SeenScraper</h1>
+        <div class="url-container">
+            <input type="url" 
+                   class="url-input" 
+                   id="urlInput"
+                   placeholder="粘贴要采集的网页地址，如: https://news.ycombinator.com">
+            <button class="btn btn-primary" onclick="loadPage()">
+                加载页面
+            </button>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <div class="preview-pane">
+            <div id="loadingOverlay" class="loading-overlay hidden">
+                <div class="spinner"></div>
+                <p style="margin-top: 1rem; color: #666;">正在加载页面...</p>
+            </div>
+            <iframe id="previewFrame" class="preview-iframe"></iframe>
+        </div>
+        
+        <div class="config-pane">
+            <div class="config-header">
+                <h2>📋 采集字段配置</h2>
+                <div class="tips">
+                    💡 点击左侧网页中要采集的内容，系统会自动识别
+                </div>
+            </div>
+            
+            <div class="fields-list" id="fieldsList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📝</div>
+                    <p>还没有选择任何字段</p>
+                    <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+                        加载网页后，点击要采集的内容
+                    </p>
+                </div>
+            </div>
+            
+            <div class="action-buttons">
+                <button class="btn btn-success" style="flex: 1" onclick="startScraping()">
+                    🚀 开始采集
+                </button>
+                <button class="btn" style="background: #e0e0e0" onclick="clearFields()">
+                    清空
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="statusMessage" class="status-message"></div>
+    
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+        let currentUrl = '';
+        let fields = [];
+        let fieldIdCounter = 0;
+        
+        // 监听iframe消息
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'element-selected') {
+                console.log('Received element selection:', event.data);
+                if (event.data.action === 'add') {
+                    addField(event.data);
+                } else {
+                    removeFieldBySelector(event.data.selector);
+                }
+            }
+        });
+        
+        async function loadPage() {
+            const url = document.getElementById('urlInput').value.trim();
+            if (!url) {
+                showStatus('请输入网页地址', 'error');
+                return;
+            }
+            
+            // 简单的URL验证
+            try {
+                new URL(url);
+            } catch {
+                showStatus('请输入有效的网址（包含 http:// 或 https://）', 'error');
+                return;
+            }
+            
+            currentUrl = url;
+            const loading = document.getElementById('loadingOverlay');
+            loading.classList.remove('hidden');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/proxy/render`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        url: url,
+                        timeout_ms: 30000
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '加载失败');
+                }
+                
+                const data = await response.json();
+                
+                // 加载到iframe
+                const iframe = document.getElementById('previewFrame');
+                iframe.srcdoc = data.html;
+                
+                showStatus('页面加载成功！现在可以点击选择要采集的内容', 'success');
+                
+            } catch (error) {
+                showStatus('加载失败: ' + error.message, 'error');
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+        
+        function addField(data) {
+            // 检查是否已存在
+            if (fields.some(f => f.selector === data.selector)) {
+                showStatus('该元素已经被选择', 'error');
+                return;
+            }
+            
+            const field = {
+                id: ++fieldIdCounter,
+                name: suggestFieldName(data),
+                selector: data.selector,
+                text: data.text,
+                tagName: data.tagName,
+                attr: detectAttribute(data)
+            };
+            
+            fields.push(field);
+            renderFields();
+            showStatus(`已添加字段: ${field.name}`, 'success');
+        }
+        
+        function suggestFieldName(data) {
+            // 智能命名建议
+            const tag = data.tagName.toLowerCase();
+            const text = (data.text || '').toLowerCase();
+            
+            if (tag === 'h1' || tag === 'h2' || tag === 'h3') {
+                return '标题';
+            } else if (tag === 'a') {
+                return '链接';
+            } else if (tag === 'img') {
+                return '图片';
+            } else if (text.includes('￥') || text.includes('$') || text.includes('价')) {
+                return '价格';
+            } else if (text.includes('时间') || text.includes('日期')) {
+                return '时间';
+            } else {
+                return `字段${fields.length + 1}`;
+            }
+        }
+        
+        function detectAttribute(data) {
+            const tag = data.tagName.toLowerCase();
+            if (tag === 'img') return 'src';
+            if (tag === 'a' && data.attributes.href) return 'href';
+            return 'text';
+        }
+        
+        function removeFieldBySelector(selector) {
+            fields = fields.filter(f => f.selector !== selector);
+            renderFields();
+        }
+        
+        function removeField(id) {
+            fields = fields.filter(f => f.id !== id);
+            renderFields();
+        }
+        
+        function updateFieldName(id, name) {
+            const field = fields.find(f => f.id === id);
+            if (field) {
+                field.name = name;
+            }
+        }
+        
+        function renderFields() {
+            const container = document.getElementById('fieldsList');
+            
+            if (fields.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📝</div>
+                        <p>还没有选择任何字段</p>
+                        <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+                            点击左侧网页中要采集的内容
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = fields.map(f => `
+                <div class="field-item">
+                    <div class="field-header">
+                        <input class="field-name" 
+                               placeholder="字段名称"
+                               value="${f.name}"
+                               onchange="updateFieldName(${f.id}, this.value)">
+                        <span class="field-type">${f.attr}</span>
+                        <button class="btn-remove" onclick="removeField(${f.id})">删除</button>
+                    </div>
+                    <div class="field-info">
+                        <div><strong>选择器:</strong> <code>${f.selector}</code></div>
+                        <div style="margin-top: 0.25rem;">
+                            <strong>预览:</strong> ${f.text || '(空内容)'}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function clearFields() {
+            if (fields.length > 0 && confirm('确定要清空所有字段吗？')) {
+                fields = [];
+                renderFields();
+                showStatus('已清空所有字段', 'success');
+            }
+        }
+        
+        async function startScraping() {
+            // 验证
+            if (fields.length === 0) {
+                showStatus('请至少选择一个要采集的字段', 'error');
+                return;
+            }
+            
+            const invalidFields = fields.filter(f => !f.name || f.name.trim() === '');
+            if (invalidFields.length > 0) {
+                showStatus('请为所有字段命名', 'error');
+                return;
+            }
+            
+            // 创建任务
+            const jobName = prompt('请输入任务名称：', `采集任务_${new Date().toLocaleDateString()}`);
+            if (!jobName) return;
+            
+            const jobData = {
+                name: jobName,
+                start_url: currentUrl,
+                status: "active",
+                selectors: fields.map(f => ({
+                    name: f.name,
+                    css: f.selector,
+                    attr: f.attr,
+                    limit: 50
+                }))
+            };
+            
+            try {
+                // 创建Job
+                const jobRes = await fetch(`${API_BASE}/jobs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(jobData)
+                });
+                
+                if (!jobRes.ok) {
+                    throw new Error('创建任务失败');
+                }
+                
+                const job = await jobRes.json();
+                
+                // 执行采集
+                const runRes = await fetch(`${API_BASE}/runs/jobs/${job.id}/run`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        url: currentUrl, 
+                        limit: 100 
+                    })
+                });
+                
+                if (!runRes.ok) {
+                    throw new Error('启动采集失败');
+                }
+                
+                const run = await runRes.json();
+                
+                showStatus(`✅ 采集任务已启动！任务ID: ${run.run_id}`, 'success');
+                
+                // 3秒后检查结果
+                setTimeout(async () => {
+                    const resultRes = await fetch(`${API_BASE}/runs/${run.run_id}`);
+                    if (resultRes.ok) {
+                        const runData = await resultRes.json();
+                        if (runData.status === 'succeeded') {
+                            if (confirm('采集完成！是否下载结果？')) {
+                                window.open(`${API_BASE}/runs/${run.run_id}/export?format=csv`, '_blank');
+                            }
+                        }
+                    }
+                }, 3000);
+                
+            } catch (error) {showStatus('操作失败: ' + error.message, 'error');
+            }
+        }
+        
+        function showStatus(message, type = 'success') {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = `status-message status-${type}`;
+            statusEl.style.display = 'block';
+            
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 5000);
+        }
+        
+        // 页面加载时的提示
+        document.addEventListener('DOMContentLoaded', () => {
+            // 自动聚焦到URL输入框
+            document.getElementById('urlInput').focus();
+            
+            // 支持回车键加载页面
+            document.getElementById('urlInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    loadPage();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

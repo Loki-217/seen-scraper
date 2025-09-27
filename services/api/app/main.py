@@ -30,7 +30,7 @@ from .routers.runs import router as runs_router, router_jobs as runs_jobs_router
 
 from .proxy import router as proxy_router
 
-from .smart_extractor import SmartExtractor, FieldSuggestion
+from .smart_extractor_subprocess import SmartExtractor
 
 from typing import Dict
 
@@ -162,12 +162,18 @@ async def smart_analyze(url: str):
     result = await extractor.analyze_page(url)
     return result
 
-@app.post("/api/smart/extract")
-async def smart_extract(url: str, selectors: Dict[str, str]):
-    """使用选择器提取数据"""
-    extractor = SmartExtractor()
-    result = await extractor.extract_with_selectors(url, selectors)
-    return result
+# API 端点保持不变
+@app.post("/api/smart/analyze")
+async def smart_analyze(url: str):
+    """智能分析页面结构"""
+    try:
+        extractor = SmartExtractor()
+        result = await extractor.analyze_page(url)
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "suggestions": []}
 
 if __name__ == "__main__":
     import uvicorn
