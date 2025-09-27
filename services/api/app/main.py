@@ -1,5 +1,10 @@
-# services/api/app/main.py
 from __future__ import annotations
+import sys
+import asyncio
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# services/api/app/main.py
+
 
 from contextlib import asynccontextmanager
 from typing import Optional, List
@@ -22,6 +27,12 @@ from .runner import run_preview, RunnerError
 from bs4 import BeautifulSoup
 import soupsieve as sv
 from .routers.runs import router as runs_router, router_jobs as runs_jobs_router
+
+from .proxy import router as proxy_router
+
+from .smart_extractor import SmartExtractor, FieldSuggestion
+
+from typing import Dict
 
 # ---------- 应用生命周期 ----------
 @asynccontextmanager
@@ -52,7 +63,7 @@ app.add_middleware(
 app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
 app.include_router(runs_jobs_router)                        # /jobs/{id}/run
 app.include_router(runs_router)
-
+app.include_router(proxy_router)  # 添加代理路由
 
 
 
@@ -143,6 +154,20 @@ def templates_preview(req: TemplatePreviewReq):
         samples=samples,
     )
 
+# 添加新端点（在其他路由后面）
+@app.post("/api/smart/analyze")
+async def smart_analyze(url: str):
+    """智能分析页面结构"""
+    extractor = SmartExtractor()
+    result = await extractor.analyze_page(url)
+    return result
+
+@app.post("/api/smart/extract")
+async def smart_extract(url: str, selectors: Dict[str, str]):
+    """使用选择器提取数据"""
+    extractor = SmartExtractor()
+    result = await extractor.extract_with_selectors(url, selectors)
+    return result
 
 if __name__ == "__main__":
     import uvicorn
