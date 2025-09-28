@@ -45,29 +45,44 @@ class SmartExtractor:
             
             print(f"Running crawler for: {url}")
             
-            # 使用 subprocess.run 执行爬虫
+            # 替换成这段
             result = subprocess.run(
                 [sys.executable, runner_path, url],
                 capture_output=True,
-                text=True,
-                encoding='utf-8',
                 timeout=60
-            )
+            ) 
             
-            # 检查执行结果
+            # 替换成这段
             if result.returncode != 0:
-                error_msg = result.stderr
-                print(f"Crawler error (code {result.returncode}): {error_msg}")
+                error_msg = result.stderr.decode('utf-8', errors='ignore') if result.stderr else "Unknown error"
+               # 日志会在 stderr 中，这是正常的
+                print(f"Crawler stderr output:\n{error_msg}")  # 这会显示在服务器终端
+    
+            # 但如果没有 stdout，才是真的错误
+            if not result.stdout:
                 return {
                     "success": False,
-                    "error": f"Crawler failed: {error_msg[:200]}",
+                    "error": f"Crawler failed with code {result.returncode}",
                     "suggestions": []
-                }
+                         }
             
-            # 解析 JSON 输出
+            # 替换成这段
+            # 处理输出编码
+            if result.stdout:
+                try:
+                    output_text = result.stdout.decode('utf-8')
+                except UnicodeDecodeError:
+                    try:
+                        output_text = result.stdout.decode('gbk')
+                    except:
+                        output_text = result.stdout.decode('utf-8', errors='ignore')
+            else:
+                output_text = ""
+
             try:
-                data = json.loads(result.stdout)
-            except json.JSONDecodeError as e:
+                data = json.loads(output_text) if output_text else {}
+            except json.JSONDecodeError as e:                                                                            
+
                 print(f"Failed to parse JSON: {result.stdout[:500]}")
                 return {
                     "success": False,
@@ -75,7 +90,7 @@ class SmartExtractor:
                     "suggestions": []
                 }
             
-            # 检查爬取是否成功
+            # 检查爬取是否成功                   
             if not data.get('success'):
                 return {
                     "success": False,
