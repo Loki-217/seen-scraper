@@ -35,6 +35,41 @@ INJECTED_SCRIPT = """
         }
     `;
     document.head.appendChild(style);
+
+    // 修改点击事件，发送更多信息给父窗口
+    document.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // 收集元素的详细信息
+        const elementInfo = {
+            tagName: e.target.tagName.toLowerCase(),
+            className: e.target.className,
+            id: e.target.id,
+            innerHTML: e.target.innerHTML.substring(0, 200),
+            textContent: e.target.textContent.substring(0, 100),
+            attributes: {},
+            rect: e.target.getBoundingClientRect(),
+            computedStyle: {
+                display: getComputedStyle(e.target).display,
+                position: getComputedStyle(e.target).position
+            }
+        };
+        
+        // 收集所有属性
+        Array.from(e.target.attributes).forEach(attr => {
+            elementInfo.attributes[attr.name] = attr.value;
+        });
+        
+        // 发送给父窗口
+        window.parent.postMessage({
+            type: 'element-clicked',
+            element: elementInfo,
+            selector: generateSelector(e.target)
+        }, '*');
+        
+        return false;
+    }, true);
     
     let lastHovered = null;
     

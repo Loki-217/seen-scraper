@@ -46,8 +46,11 @@ async def lifespan(app: FastAPI):
 # ---------- 创建应用 ----------
 setup_logging()
 app = FastAPI(
-    title=settings.api_title,
-    version=settings.api_version,
+    title="SeenFetch API",
+    version="1.0.0",
+    description="Visual web scraping made simple - See it, Fetch it!",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
     lifespan=lifespan,
 )
 
@@ -67,10 +70,16 @@ app.include_router(proxy_router)  # 添加代理路由
 
 
 
-# ---------- 健康检查 ----------
-@app.get("/health")
-def health():
-    return {"ok": True, "version": settings.api_version}
+# ---------- 品牌data端点 ----------
+@app.get("/")
+def root():
+    return {
+        "name": "SeenFetch",
+        "version": settings.api_version,
+        "tagline": "See it, Fetch it",
+        "description": "Visual web data extraction for everyone",
+        "api_docs": "/api/docs"
+    }
 
 
 # ---------- Playwright 远程页面预览 ----------
