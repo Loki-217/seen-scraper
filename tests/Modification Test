@@ -1,0 +1,19 @@
+.venv\Scripts\activate
+#1：API服务启动检查
+启动后端服务
+
+cd services/api
+uvicorn app.main:app --reload --port 8000
+
+API文档
+http://127.0.0.1:8000/api/docs
+健康检查
+http://127.0.0.1:8000/health
+
+预期：
+{
+  "ok": true,
+  "version": "0.1.0"  // 版本号
+}
+
+#2：前端页面加载

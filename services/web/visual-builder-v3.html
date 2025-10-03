@@ -2,8 +2,60 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>SeenScraper - 智能爬虫构建器 V2</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>SeenFetch - Visual Web Scraper | See it, Fetch it</title>
+    <meta name="description" content="SeenFetch: The easiest way to extract data from websites. No coding required. Just click what you see and fetch the data instantly.">
+    <meta name="keywords" content="web scraper, data extraction, no-code, visual scraping, SeenFetch">
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="SeenFetch - Visual Web Scraper">
+    <meta property="og:description" content="See it, Fetch it - Extract web data without writing code">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://seenfetch.io">
+
+
     <style>
+        :root {
+            --brand-primary: #667eea;
+            --brand-secondary: #764ba2;
+            --brand-success: #4CAF50;
+            --brand-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+        }
+        
+        /* Logo 样式 */
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .brand-icon {
+            width: 32px;
+            height: 32px;
+            background: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        
+        .brand-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+        }
+        
+        .brand-tagline {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-left: 1rem;
+            padding-left: 1rem;
+            border-left: 2px solid rgba(255,255,255,0.3);
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
@@ -266,15 +318,22 @@
             opacity: 0.9;
         }
     </style>
+    <!-- 引入更新后的样式 -->
+    <link rel="stylesheet" href="css/seenfetch-styles.css">
 </head>
 <body>
     <div class="header">
-        <h1>🎯 SeenScraper V2</h1>
+        <div class="brand-logo">
+            <div class="brand-icon">👁️</div>
+            <div class="brand-name">SeenFetch</div>
+            <div class="brand-tagline">See it, Fetch it</div>
+        </div>
+        
         <div class="url-container">
             <input type="url" 
                    class="url-input" 
                    id="urlInput"
-                   placeholder="粘贴要采集的网页地址">
+                   placeholder="粘贴网页地址，开始可视化数据提取">
             
             <div class="mode-selector">
                 <button class="mode-btn active" onclick="switchMode('manual')">手动选择</button>
@@ -282,7 +341,7 @@
             </div>
             
             <button class="btn btn-primary" onclick="loadPage()">
-                开始分析
+                开始提取
             </button>
         </div>
     </div>
@@ -297,6 +356,10 @@
             <iframe id="previewFrame" style="width: 100%; height: 100%; border: none;"></iframe>
         </div>
         
+        <div id="smartSelectDialog" class="smart-select-dialog-container" style="display: none;"></div>
+
+        <div id="smartHint" class="smart-hint" style="display: none;"></div>
+
         <!-- 智能模式：分析结果 -->
         <div id="smartMode" class="smart-panel hidden">
             <h2>🤖 智能分析结果</h2>
@@ -394,7 +457,15 @@
     </div>
     
     <script>
-        const API_BASE = 'http://127.0.0.1:8000';
+        const BRAND = {
+            name: 'SeenFetch',
+            version: '1.0.0',
+            tagline: 'See it, Fetch it',
+            api_base: 'http://127.0.0.1:8000',
+            author: 'SeenFetch Team',
+            website: 'https://seenfetch.io'
+        };
+        const API_BASE = BRAND.api_base;
         let currentMode = 'manual';
         let currentUrl = '';
         let smartSuggestions = [];
@@ -714,6 +785,43 @@
                 if (e.key === 'Enter') loadPage();
             });
         });
+    </script>
+    <!-- 新增：引入模块化的JS文件 -->
+    <script src="js/smart-selector.js"></script>
+    <script src="js/enhanced-ui.js"></script>
+    
+    <!-- 新增：初始化脚本 -->
+    <script>
+        // 初始化智能选择器和增强UI
+        let smartSelector = null;
+        let enhancedUI = null;
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初始化组件
+            smartSelector = new SmartSelector();
+            enhancedUI = new EnhancedUI();
+            
+            // 修改原有的iframe消息监听，集成智能选择
+            window.addEventListener('message', handleIframeMessage);
+        });
+        
+        // 处理iframe消息的新方法
+        async function handleIframeMessage(event) {
+            if (!event.data || event.data.type !== 'element-clicked') return;
+            
+            // 使用智能选择器分析
+            const result = await smartSelector.analyzeSimilarElements(event.data.element);
+            
+            if (result.success) {
+                // 显示确认对话框
+                enhancedUI.showConfirmDialog(result);
+            } else {
+                // 降级到原有的单个选择
+                addField(event.data);
+            }
+        }
+        
+        // 其他函数...
     </script>
 </body>
 </html>
