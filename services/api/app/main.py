@@ -34,6 +34,10 @@ from .smart_extractor_subprocess import SmartExtractor
 
 from typing import Dict
 
+
+
+
+
 # ---------- 应用生命周期 ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -81,6 +85,10 @@ def root():
         "api_docs": "/api/docs"
     }
 
+# ---------- 健康检查 ----------
+@app.get("/health")
+def health():
+    return {"ok": True, "version": settings.api_version}
 
 # ---------- Playwright 远程页面预览 ----------
 class PlayPreviewReq(BaseModel):
@@ -183,6 +191,8 @@ async def smart_analyze(url: str):
         import traceback
         traceback.print_exc()
         return {"success": False, "error": str(e), "suggestions": []}
+
+
 
 if __name__ == "__main__":
     import uvicorn

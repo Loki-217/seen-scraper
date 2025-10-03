@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 import subprocess
 import json
 import sys
@@ -16,7 +16,11 @@ class RenderRequest(BaseModel):
     timeout_ms: int = 30000
     wait_for: Optional[str] = None
 
-# 注入的JavaScript代码
+class SmartClickRequest(BaseModel):
+    url: str
+    element: Dict[str, Any]
+
+# 增强的注入脚本
 INJECTED_SCRIPT = """
 (function() {
     if (window.__scraperInjected) return;
@@ -33,39 +37,90 @@ INJECTED_SCRIPT = """
             background: rgba(76, 175, 80, 0.3) !important;
             outline: 2px solid #2196F3 !important;
         }
+        .scraper-similar {
+            outline: 3px solid #FF9800 !important;
+            outline-offset: 2px;
+            background: rgba(255, 152, 0, 0.1) !important;
+        }
     `;
     document.head.appendChild(style);
 
-    // 修改点击事件，发送更多信息给父窗口
+    // 增强的点击处理
     document.addEventListener('click', function(e) {
         e.preventDefault();
         e.stopPropagation();
         
-        // 收集元素的详细信息
-        const elementInfo = {
-            tagName: e.target.tagName.toLowerCase(),
-            className: e.target.className,
-            id: e.target.id,
-            innerHTML: e.target.innerHTML.substring(0, 200),
-            textContent: e.target.textContent.substring(0, 100),
-            attributes: {},
-            rect: e.target.getBoundingClientRect(),
-            computedStyle: {
-                display: getComputedStyle(e.target).display,
-                position: getComputedStyle(e.target).position
+        const element = e.target;
+        
+        // 生成智能选择器
+        function getSmartSelector(el) {
+            // 优先使用ID
+            if (el.id && !el.id.match(/[0-9]{5,}/)) {
+                return '#' + el.id;
             }
+            
+            // 尝试使用class
+            if (el.className && typeof el.className === 'string') {
+                const classes = el.className
+                    .split(' ')
+                    .filter(c => c && !c.match(/^(scraper-|active|hover|focus)/))
+                    .slice(0, 2);
+                if (classes.length > 0) {
+                    return el.tagName.toLowerCase() + '.' + classes.join('.');
+                }
+            }
+            
+            // 使用标签+属性
+            let selector = el.tagName.toLowerCase();
+            if (el.hasAttribute('type')) {
+                selector += '[type="' + el.getAttribute('type') + '"]';
+            }
+            return selector;
+        }
+        
+        const selector = getSmartSelector(element);
+        
+        // 查找相似元素
+        const allSimilar = document.querySelectorAll(selector);
+        const similarCount = allSimilar.length;
+        
+        // 收集详细信息
+        const elementInfo = {
+            tagName: element.tagName.toLowerCase(),
+            className: element.className,
+            id: element.id,
+            text: element.innerText?.substring(0, 100) || '',
+            selector: selector,
+            similarCount: similarCount,
+            rect: element.getBoundingClientRect(),
+            attributes: {}
         };
         
-        // 收集所有属性
-        Array.from(e.target.attributes).forEach(attr => {
+        // 收集属性
+        Array.from(element.attributes).forEach(attr => {
             elementInfo.attributes[attr.name] = attr.value;
         });
+        
+        // 如果有多个相似元素，高亮它们
+        if (similarCount > 1) {
+            allSimilar.forEach(el => {
+                el.classList.add('scraper-similar');
+            });
+            
+            // 3秒后移除高亮
+            setTimeout(() => {
+                allSimilar.forEach(el => {
+                    el.classList.remove('scraper-similar');
+                });
+            }, 3000);
+        }
         
         // 发送给父窗口
         window.parent.postMessage({
             type: 'element-clicked',
             element: elementInfo,
-            selector: generateSelector(e.target)
+            selector: selector,
+            hasSimilar: similarCount > 1
         }, '*');
         
         return false;
@@ -81,78 +136,11 @@ INJECTED_SCRIPT = """
         lastHovered = e.target;
     }, true);
     
-    document.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const elem = e.target;
-        const isSelected = elem.classList.contains('scraper-selected');
-        
-        if (isSelected) {
-            elem.classList.remove('scraper-selected');
-        } else {
-            elem.classList.add('scraper-selected');
-        }
-        
-        const selector = generateSelector(elem);
-        const text = elem.innerText ? elem.innerText.substring(0, 100) : '';
-        const tagName = elem.tagName.toLowerCase();
-        
-        if (window.parent !== window) {
-            window.parent.postMessage({
-                type: 'element-selected',
-                action: isSelected ? 'remove' : 'add',
-                selector: selector,
-                text: text,
-                tagName: tagName,
-                attributes: {
-                    href: elem.getAttribute('href'),
-                    src: elem.getAttribute('src')
-                }
-            }, '*');
-        }
-        
-        return false;
-    }, true);
-    
-    function generateSelector(elem) {
-        if (elem.id && !elem.id.match(/[0-9]{5,}/)) {
-            return '#' + elem.id;
-        }
-        
-        if (elem.className && typeof elem.className === 'string') {
-            const classes = elem.className
-                .split(' ')
-                .filter(c => c && !c.match(/^(active|hover|focus|scraper-)/));
-            
-            if (classes.length > 0) {
-                const selector = '.' + classes.join('.');
-                const matches = document.querySelectorAll(selector);
-                if (matches.length === 1) return selector;
-            }
-        }
-        
-        const path = [];
-        let current = elem;
-        while (current && current.nodeType === Node.ELEMENT_NODE && path.length < 4) {
-            let selector = current.tagName.toLowerCase();
-            if (current.className && typeof current.className === 'string') {
-                const classes = current.className.split(' ').filter(c => c && !c.match(/^(scraper-|active|hover)/)).slice(0, 1);
-                if (classes.length > 0) {
-                    selector += '.' + classes[0];
-                }
-            }
-            path.unshift(selector);
-            current = current.parentElement;
-        }
-        return path.join(' > ');
-    }
-    
     console.log('Scraper script injected!');
 })();
 """
 
-# 创建一个独立的Python脚本来运行Playwright
+# Playwright渲染脚本（保持不变）
 PLAYWRIGHT_SCRIPT = """
 import sys
 import json
@@ -210,20 +198,17 @@ if __name__ == "__main__":
 async def render_page(req: RenderRequest):
     """通过子进程运行Playwright，完全避开asyncio冲突"""
     
-    # 创建临时Python文件
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
         f.write(PLAYWRIGHT_SCRIPT)
         temp_script = f.name
     
     try:
-        # 准备参数
         params = {
             "url": req.url,
             "timeout_ms": req.timeout_ms,
             "wait_for": req.wait_for
         }
         
-        # 运行子进程
         result = subprocess.run(
             [sys.executable, temp_script, json.dumps(params)],
             capture_output=True,
@@ -234,7 +219,6 @@ async def render_page(req: RenderRequest):
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=f"Playwright error: {result.stderr}")
         
-        # 解析结果
         output = json.loads(result.stdout)
         
         if not output["success"]:
@@ -249,7 +233,94 @@ async def render_page(req: RenderRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # 清理临时文件
+        try:
+            os.unlink(temp_script)
+        except:
+            pass
+
+@router.post("/smart-click")
+async def smart_click(req: SmartClickRequest):
+    """处理智能点击，分析相似元素"""
+    
+    # 创建分析脚本
+    analyze_script = f"""
+import sys
+import json
+from playwright.sync_api import sync_playwright
+
+def analyze_similar(url, element_info):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url, wait_until="networkidle")
+        
+        # 根据元素信息生成选择器
+        selector = element_info.get('selector')
+        if not selector:
+            # 尝试生成选择器
+            if element_info.get('id'):
+                selector = '#' + element_info['id']
+            elif element_info.get('className'):
+                classes = element_info['className'].split()[0]
+                selector = element_info['tagName'] + '.' + classes
+            else:
+                selector = element_info['tagName']
+        
+        # 查找所有匹配元素
+        elements = page.query_selector_all(selector)
+        
+        samples = []
+        for i, el in enumerate(elements[:10]):  # 最多取10个样本
+            try:
+                samples.append({{
+                    'index': i,
+                    'text': el.inner_text()[:100] if el.inner_text() else '',
+                    'html': el.inner_html()[:200] if el.inner_html() else ''
+                }})
+            except:
+                pass
+        
+        browser.close()
+        
+        return {{
+            'success': True,
+            'selector': selector,
+            'count': len(elements),
+            'samples': samples
+        }}
+
+if __name__ == "__main__":
+    import sys
+    params = json.loads(sys.argv[1])
+    result = analyze_similar(params['url'], params['element'])
+    print(json.dumps(result))
+"""
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+        f.write(analyze_script)
+        temp_script = f.name
+    
+    try:
+        params = {
+            "url": req.url,
+            "element": req.element
+        }
+        
+        result = subprocess.run(
+            [sys.executable, temp_script, json.dumps(params)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            return {"success": False, "error": result.stderr}
+        
+        return json.loads(result.stdout)
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
         try:
             os.unlink(temp_script)
         except:
@@ -261,7 +332,7 @@ async def test_proxy():
 
 @router.post("/test-simple")
 async def test_simple():
-    """测试基本功能 - 也使用子进程方式"""
+    """测试基本功能"""
     simple_script = """
 from playwright.sync_api import sync_playwright
 import json
