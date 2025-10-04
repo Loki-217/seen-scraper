@@ -1,16 +1,17 @@
+# services/api/app/main.py
 from __future__ import annotations
 import sys
 import asyncio
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-# services/api/app/main.py
-
 
 from contextlib import asynccontextmanager
 from typing import Optional, List
+import traceback
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .settings import settings
@@ -35,9 +36,6 @@ from .smart_extractor_subprocess import SmartExtractor
 from typing import Dict
 
 
-
-
-
 # ---------- 应用生命周期 ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -58,6 +56,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# 🔥 添加全局异常处理 - 必须在app创建之后
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_detail = {
+        "error": str(exc),
+        "type": type(exc).__name__,
+        "traceback": traceback.format_exc()
+    }
+    print(f"\n{'='*60}")
+    print(f"捕获到异常 - {request.method} {request.url.path}")
+    print(f"错误类型: {type(exc).__name__}")
+    print(f"错误信息: {exc}")
+    print(f"完整堆栈:\n{traceback.format_exc()}")
+    print("="*60)
+    return JSONResponse(
+        status_code=500,
+        content=error_detail
+    )
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -72,6 +89,7 @@ app.include_router(runs_jobs_router)                        # /jobs/{id}/run
 app.include_router(runs_router)
 app.include_router(proxy_router)  # 添加代理路由
 
+# ... 后面的代码保持不变
 
 
 # ---------- 品牌data端点 ----------

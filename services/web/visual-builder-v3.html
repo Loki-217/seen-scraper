@@ -509,29 +509,68 @@
             }
         }
         
-        async function loadManualMode(url) {
-            const loading = document.getElementById('loadingOverlay');
-            loading.classList.remove('hidden');
-            
-            try {
-                const response = await fetch(`${API_BASE}/api/proxy/render`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: url, timeout_ms: 30000 })
-                });
-                
-                if (!response.ok) throw new Error('加载失败');
-                
-                const data = await response.json();
-                const iframe = document.getElementById('previewFrame');
-                iframe.srcdoc = data.html;
-                
-            } catch (error) {
-                alert('加载失败: ' + error.message);
-            } finally {
-                loading.classList.add('hidden');
-            }
-        }
+async function loadManualMode(url) {
+    const loading = document.getElementById('loadingOverlay');
+    loading.classList.remove('hidden');
+    
+    try {
+        console.log('Sending request to:', `${API_BASE}/api/proxy/render`);
+        console.log('With data:', { url: url, timeout_ms: 30000 });
+        
+        const response = await fetch(`${API_BASE}/api/proxy/render`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ 
+                url: url, 
+                timeout_ms: 30000,
+                wait_for: null
+            })
+        });
+        
+        console.log('Response status:', response.status);
+        
+       if (!response.ok) {
+    const errorData = await response.json();
+    console.error('=== Full Error Details ===');
+    console.error('Status:', response.status);
+    console.error('Error Data:', errorData);
+    console.error('Detail:', errorData.detail);
+    
+    // 如果 detail 是对象，展开显示
+    if (typeof errorData.detail === 'object') {
+        console.error('Error:', errorData.detail.error);
+        console.error('Details:', errorData.detail.details);
+        console.error('Traceback:', errorData.detail.traceback);
+    }
+    console.error('=========================');
+    
+    // 构造友好的错误消息
+    let errorMsg = 'Unknown error';
+    if (typeof errorData.detail === 'object') {
+        errorMsg = errorData.detail.error || errorData.detail.details || JSON.stringify(errorData.detail);
+    } else {
+        errorMsg = errorData.detail || errorData.error || JSON.stringify(errorData);
+    }
+    
+    throw new Error(errorMsg);
+}
+        
+        const data = await response.json();
+        console.log('Success:', data);
+        
+        const iframe = document.getElementById('previewFrame');
+        iframe.srcdoc = data.html;
+        
+    } catch (error) {
+        console.error('Full error:', error);
+        alert('加载失败: ' + error.message);
+    } finally {
+        loading.classList.add('hidden');
+    }
+}
         
         async function loadSmartMode(url) {
             const loading = document.getElementById('smartLoading');
@@ -754,22 +793,35 @@
             }
         }
         
-        // 监听iframe消息（手动模式）
-        window.addEventListener('message', (event) => {
-            if (event.data && event.data.type === 'element-selected' && currentMode === 'manual') {
-                if (event.data.action === 'add') {
-                    // 添加到配置字段
-                    configuredFields.push({
-                        name: `字段${configuredFields.length + 1}`,
-                        selector: event.data.selector,
-                        type: event.data.tagName,
-                        attr: detectAttribute(event.data),
-                        samples: [event.data.text]
-                    });
-                    renderConfiguredFields();
-                }
-            }
-        });
+        // 在 visual-builder-v3.html 的 <script> 标签末尾添加
+
+// 监听iframe消息
+window.addEventListener('message', (event) => {
+    console.log('[SeenFetch] Message received:', event.data);
+    
+    if (event.data && event.data.type === 'element-clicked') {
+        console.log('[SeenFetch] Element clicked:', event.data.element);
+        
+        // 显示确认对话框
+        const element = event.data.element;
+        const message = `选中元素：\n标签: ${element.tagName}\n文本: ${element.text}\n选择器: ${element.selector}\n\n是否添加到采集字段？`;
+        
+        if (confirm(message)) {
+            // 添加到配置字段
+            configuredFields.push({
+                name: `字段${configuredFields.length + 1}`,
+                selector: element.selector,
+                type: element.tagName,
+                attr: element.href ? 'href' : (element.src ? 'src' : 'text'),
+                samples: [element.text]
+            });
+            renderConfiguredFields();
+            showStatus(`已添加字段: ${element.selector}`, 'success');
+        }
+    }
+});
+
+console.log('[SeenFetch] Message listener registered');
         
         function detectAttribute(data) {
             const tag = (data.tagName || '').toLowerCase();
