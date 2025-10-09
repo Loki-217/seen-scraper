@@ -81,7 +81,7 @@ INJECTED_SCRIPT = r"""
 })();
 """
 
-# 改进的Playwright脚本 - 添加反反爬虫
+# 改进的Playwright脚本 - 添加反反爬虫和滚动功能
 PLAYWRIGHT_TEMPLATE = """
 import sys
 import json
@@ -104,7 +104,6 @@ def render_page(url, timeout_ms, wait_for, inject_js):
                     '--disable-dev-shm-usage',
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
-                    '--disable-web-security',  # 禁用安全检查
                 ]
             )
             
@@ -113,7 +112,6 @@ def render_page(url, timeout_ms, wait_for, inject_js):
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 locale='zh-CN',
                 timezone_id='Asia/Shanghai',
-                # 🔥 添加更多真实浏览器特征
                 extra_http_headers={
                     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
                 }
@@ -127,13 +125,36 @@ def render_page(url, timeout_ms, wait_for, inject_js):
                 window.chrome = {runtime: {}};
             ''')
             
-            # 🔥 使用load而不是networkidle，更快且更可靠
+            # 🔥 导航到页面
             try:
                 page.goto(url, wait_until="load", timeout=timeout_ms)
                 page.wait_for_timeout(2000)
+                print("[Render] Page loaded", file=sys.stderr)
+                
+                # 🔥 自动滚动预加载
+                try:
+                    initial_h = page.evaluate("document.body.scrollHeight")
+                    print(f"[Scroll] Start: {initial_h}px", file=sys.stderr)
+                    
+                    for i in range(5):
+                        page.evaluate("window.scrollTo(0, 999999); window.scrollBy(0, 9999);")
+                        page.wait_for_timeout(1200)
+                        page.evaluate('document.querySelectorAll("img[loading]").forEach(i=>i.loading="eager");')
+                        
+                        new_h = page.evaluate("document.body.scrollHeight")
+                        print(f"[Scroll] #{i+1}: {new_h}px", file=sys.stderr)
+                        if new_h == initial_h:
+                            break
+                        initial_h = new_h
+                    
+                    page.evaluate("window.scrollTo(0, 0)")
+                    page.wait_for_timeout(300)
+                    print("[Scroll] Complete", file=sys.stderr)
+                except Exception as e:
+                    print(f"[Scroll] Error: {e}", file=sys.stderr)
+                
             except Exception as e:
                 error_msg = str(e)
-                # 检查是否是反爬虫
                 if 'ERR_CONNECTION_CLOSED' in error_msg or 'ERR_FAILED' in error_msg:
                     return {
                         "success": False,
@@ -159,14 +180,47 @@ def render_page(url, timeout_ms, wait_for, inject_js):
             content = page.content()
             title = page.title()
             
-            # 🔥 添加 <base> 标签修复资源路径
+            # 🔥 修复资源路径和添加图标库
             from urllib.parse import urlparse
             parsed = urlparse(page.url)
-            base_url = f"{parsed.scheme}://{parsed.netloc}/"
+            base = f"{parsed.scheme}://{parsed.netloc}/"
             
             if '<head>' in content:
-                base_tag = f'<base href="{base_url}">'
-                content = content.replace('<head>', f'<head>\\n{base_tag}', 1)
+                # 1. 添加 <base> 标签
+                base_tag = f'<base href="{base}">'
+                
+                # 2. 添加字体图标库（支持多个版本）
+                icon_libs = r'''
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+<style>
+/* 🔥 修复 Element UI 图标字体路径 */
+@font-face {
+    font-family: element-icons;
+    src: url(https://unpkg.com/element-ui/lib/theme-chalk/fonts/element-icons.woff) format("woff"),
+         url(https://unpkg.com/element-ui/lib/theme-chalk/fonts/element-icons.ttf) format("truetype");
+    font-weight: 400;
+    font-display: swap;
+}
+</style>'''
+                
+                # 3. 一次性插入所有修复
+                fixes = base_tag + '\\n' + icon_libs
+                content = content.replace('<head>', f'<head>\\n{fixes}', 1)
+                
+                # 4. 修复常见的相对路径
+                content = content.replace('url(/static/', f'url({base}static/')
+                content = content.replace('src="/static/', f'src="{base}static/')
+                content = content.replace("src='/static/", f"src='{base}static/")
+
+                # 🔥 修复字体文件路径
+                content = content.replace('url(/fonts/', f'url({base}fonts/')
+                content = content.replace('url("../fonts/', f'url("{base}fonts/')
+                content = content.replace("url('../fonts/", f"url('{base}fonts/")
+    
+                
+                print("[Fix] Resources and icons fixed", file=sys.stderr)
             
             browser.close()
             
@@ -194,12 +248,17 @@ if __name__ == "__main__":
         params.get("wait_for"),
         params["inject_js"]
     )
-    print(json.dumps(result, ensure_ascii=True))
+    # 🔥 确保使用ASCII编码输出，避免Windows编码问题
+    output = json.dumps(result, ensure_ascii=True)
+    sys.stdout.buffer.write(output.encode('utf-8'))
+    sys.stdout.buffer.flush()
 """
 
 @router.post("/render")
 async def render_page(req: RenderRequest):
     """通过子进程运行Playwright"""
+    
+    print(f"[API] Rendering URL: {req.url}")
     
     temp_script = None
     try:
@@ -233,6 +292,37 @@ async def render_page(req: RenderRequest):
             env=env
         )
         
+        # 🔥 输出详细调试信息
+        print("=== Playwright STDERR ===")
+        print(result.stderr)
+        print("=" * 50)
+
+        # 检查返回的 HTML
+        if result.stdout:
+            try:
+                output = json.loads(result.stdout)
+                html_snippet = output.get('html', '')[:800]
+                print("=== HTML Preview (first 800 chars) ===")
+                print(html_snippet)
+                print("=" * 50)
+                
+                # 检查关键标签
+                html_full = output.get('html', '')
+                if '<base href=' in html_full:
+                    print("✅ <base> tag found!")
+                else:
+                    print("❌ <base> tag NOT found!")
+                
+                if 'font-awesome' in html_full:
+                    print("✅ Font Awesome link found!")
+                else:
+                    print("❌ Font Awesome link NOT found!")
+                    
+                print(f"📊 HTML length: {len(html_full)} bytes")
+                
+            except Exception as e:
+                print(f"⚠️ Failed to parse output: {e}")
+
         if result.returncode != 0:
             raise HTTPException(
                 status_code=500,
@@ -267,6 +357,8 @@ async def render_page(req: RenderRequest):
                 }
             )
         
+        print(f"[API] ✅ Success, HTML length: {len(output.get('html', ''))} bytes")
+        
         return output
         
     except subprocess.TimeoutExpired:
@@ -293,7 +385,6 @@ async def render_page(req: RenderRequest):
             except:
                 pass
 
-# 其他函数保持不变...
 @router.get("/test")
 async def test_proxy():
     return {"status": "ok"}

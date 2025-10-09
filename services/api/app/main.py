@@ -35,7 +35,7 @@ from .smart_extractor_subprocess import SmartExtractor
 
 from typing import Dict
 
-
+from .routers.ai import router as ai_router
 # ---------- 应用生命周期 ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -88,7 +88,7 @@ app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
 app.include_router(runs_jobs_router)                        # /jobs/{id}/run
 app.include_router(runs_router)
 app.include_router(proxy_router)  # 添加代理路由
-
+app.include_router(ai_router)  # 添加 AI 路由
 # ... 后面的代码保持不变
 
 

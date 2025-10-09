@@ -514,8 +514,7 @@ async function loadManualMode(url) {
     loading.classList.remove('hidden');
     
     try {
-        console.log('Sending request to:', `${API_BASE}/api/proxy/render`);
-        console.log('With data:', { url: url, timeout_ms: 30000 });
+        console.log('[Frontend] Sending request to:', `${API_BASE}/api/proxy/render`);
         
         const response = await fetch(`${API_BASE}/api/proxy/render`, {
             method: 'POST',
@@ -530,42 +529,36 @@ async function loadManualMode(url) {
             })
         });
         
-        console.log('Response status:', response.status);
+        console.log('[Frontend] Response status:', response.status);
         
-       if (!response.ok) {
-    const errorData = await response.json();
-    console.error('=== Full Error Details ===');
-    console.error('Status:', response.status);
-    console.error('Error Data:', errorData);
-    console.error('Detail:', errorData.detail);
-    
-    // 如果 detail 是对象，展开显示
-    if (typeof errorData.detail === 'object') {
-        console.error('Error:', errorData.detail.error);
-        console.error('Details:', errorData.detail.details);
-        console.error('Traceback:', errorData.detail.traceback);
-    }
-    console.error('=========================');
-    
-    // 构造友好的错误消息
-    let errorMsg = 'Unknown error';
-    if (typeof errorData.detail === 'object') {
-        errorMsg = errorData.detail.error || errorData.detail.details || JSON.stringify(errorData.detail);
-    } else {
-        errorMsg = errorData.detail || errorData.error || JSON.stringify(errorData);
-    }
-    
-    throw new Error(errorMsg);
-}
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('[Frontend] Error:', errorData);
+            throw new Error(errorData.detail?.error || 'Request failed');
+        }
         
         const data = await response.json();
-        console.log('Success:', data);
+        console.log('[Frontend] ✅ Data received, HTML length:', data.html?.length);
         
+        // 🔥 直接使用后端返回的 HTML，不做任何修改
         const iframe = document.getElementById('previewFrame');
         iframe.srcdoc = data.html;
         
+        console.log('[Frontend] ✅ HTML loaded into iframe');
+        
+        // 验证修复是否生效
+        setTimeout(() => {
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            const fontAwesomeLink = iframeDoc.querySelector('link[href*="font-awesome"]');
+            const baseTag = iframeDoc.querySelector('base');
+            
+            console.log('[Frontend] 验证结果:');
+            console.log('  - Font Awesome link:', fontAwesomeLink ? '✅ 存在' : '❌ 不存在');
+            console.log('  - Base tag:', baseTag ? `✅ ${baseTag.href}` : '❌ 不存在');
+        }, 500);
+        
     } catch (error) {
-        console.error('Full error:', error);
+        console.error('[Frontend] ❌ Error:', error);
         alert('加载失败: ' + error.message);
     } finally {
         loading.classList.add('hidden');
@@ -796,27 +789,45 @@ async function loadManualMode(url) {
         // 在 visual-builder-v3.html 的 <script> 标签末尾添加
 
 // 监听iframe消息
-window.addEventListener('message', (event) => {
+// 监听iframe消息（AI增强版）
+window.addEventListener('message', async (event) => {
     console.log('[SeenFetch] Message received:', event.data);
     
     if (event.data && event.data.type === 'element-clicked') {
-        console.log('[SeenFetch] Element clicked:', event.data.element);
-        
-        // 显示确认对话框
         const element = event.data.element;
-        const message = `选中元素：\n标签: ${element.tagName}\n文本: ${element.text}\n选择器: ${element.selector}\n\n是否添加到采集字段？`;
+        console.log('[SeenFetch] Element clicked:', element);
+
+          // 🔥 显示加载提示
+        const loadingMsg = document.createElement('div');
+        loadingMsg.style.cssText = `
+            position: fixed; top: 20px; right: 20px; 
+            background: #667eea; color: white; 
+            padding: 12px 20px; border-radius: 8px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 9999;
+        `;
+        loadingMsg.textContent = '🤖 AI 正在分析...';
+        document.body.appendChild(loadingMsg);
+        
+        // 🔥 调用 AI 建议字段名
+        const fieldName = await suggestFieldName(element);
+
+        document.body.removeChild(loadingMsg);
+        
+        // 显示确认对话框（带 AI 建议的名称）
+        const message = `AI 建议字段名: ${fieldName}\n\n标签: ${element.tagName}\n文本: ${element.text}\n选择器: ${element.selector}\n\n是否添加到采集字段？`;
         
         if (confirm(message)) {
             // 添加到配置字段
             configuredFields.push({
-                name: `字段${configuredFields.length + 1}`,
+                name: fieldName,  // 🔥 使用 AI 建议的名称
                 selector: element.selector,
                 type: element.tagName,
-                attr: element.href ? 'href' : (element.src ? 'src' : 'text'),
+                attr: detectAttribute(element),
                 samples: [element.text]
             });
             renderConfiguredFields();
-            showStatus(`已添加字段: ${element.selector}`, 'success');
+            showStatus(`✅ 已添加字段: ${fieldName}`, 'success');
         }
     }
 });
@@ -837,6 +848,57 @@ console.log('[SeenFetch] Message listener registered');
                 if (e.key === 'Enter') loadPage();
             });
         });
+/**
+ * 调用 AI 建议字段名
+ */
+async function suggestFieldName(element) {
+    try {
+        console.log('[AI] Requesting field name suggestion...');
+        
+        // 收集上下文信息
+        const context = {
+            previousText: '',  // 可以从 DOM 中提取
+            parentClassName: '',
+            surroundingText: element.text,  // 简化版，用元素文本作为上下文
+            isInList: false,
+            pageType: 'unknown'
+        };
+        
+        const response = await fetch(`${API_BASE}/api/ai/suggest-field-name`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                element: {
+                    text: element.text || '',
+                    tagName: element.tagName || '',
+                    className: element.className || '',
+                    id: element.id || '',
+                    href: element.href || '',
+                    src: element.src || ''
+                },
+                context: context
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('AI 服务请求失败');
+        }
+        
+        const result = await response.json();
+        
+        console.log('[AI] Suggestion result:', result);
+        console.log(`[AI] Source: ${result.source}, Confidence: ${result.confidence}`);
+        
+        return result.fieldName;
+        
+    } catch (error) {
+        console.error('[AI] Error:', error);
+        // 降级：如果 AI 失败，返回默认名称
+        return `字段${configuredFields.length + 1}`;
+    }
+}        
     </script>
     <!-- 新增：引入模块化的JS文件 -->
     <script src="js/smart-selector.js"></script>
@@ -877,3 +939,7 @@ console.log('[SeenFetch] Message listener registered');
     </script>
 </body>
 </html>
+
+
+
+
