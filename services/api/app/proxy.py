@@ -119,10 +119,42 @@ def render_page(url, timeout_ms, wait_for, inject_js):
             
             page = context.new_page()
             
-            # 🔥 隐藏webdriver特征
+            # 🔥 隐藏webdriver特征 + 反反调试
             page.add_init_script('''
+                // 隐藏 webdriver
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
                 window.chrome = {runtime: {}};
+                
+                // 🔥 反反调试：禁用开发者工具检测
+                (function() {
+                    // 1. 阻止检测窗口尺寸变化
+                    const origAddEventListener = window.addEventListener;
+                    window.addEventListener = function(type, listener, options) {
+                        if (type === 'resize' || type === 'devtoolschange') {
+                            console.log('[SeenFetch] Blocked:', type);
+                            return;
+                        }
+                        return origAddEventListener.call(this, type, listener, options);
+                    };
+                    
+                    // 2. 冻结窗口尺寸差异（常用检测手段）
+                    Object.defineProperty(window, 'outerHeight', {
+                        get: () => window.innerHeight
+                    });
+                    Object.defineProperty(window, 'outerWidth', {
+                        get: () => window.innerWidth
+                    });
+                    
+                    // 3. 禁用 devtools-detector 等库
+                    window.devtools = {isOpen: false, orientation: undefined};
+                    
+                    // 4. 覆盖常见的检测变量
+                    Object.defineProperty(window, '__REACT_DEVTOOLS_GLOBAL_HOOK__', {
+                        get: () => undefined
+                    });
+                    
+                    console.log('[SeenFetch] Anti-anti-debug enabled');
+                })();
             ''')
             
             # 🔥 导航到页面
@@ -180,7 +212,7 @@ def render_page(url, timeout_ms, wait_for, inject_js):
             content = page.content()
             title = page.title()
             
-            # 🔥 修复资源路径和添加图标库
+            # 🔥 修复资源路径、图标库 + 强制显示隐藏元素
             from urllib.parse import urlparse
             parsed = urlparse(page.url)
             base = f"{parsed.scheme}://{parsed.netloc}/"
@@ -203,6 +235,28 @@ def render_page(url, timeout_ms, wait_for, inject_js):
     font-weight: 400;
     font-display: swap;
 }
+
+/* 🔥 强制显示所有隐藏元素（反反调试） */
+.runoob-block,
+.runoob_cf,
+div[style*="display: none"],
+div[style*="display:none"],
+div[style*="visibility: hidden"],
+div[style*="visibility:hidden"] {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    overflow: visible !important;
+}
+
+/* 强制显示底部二维码区域 */
+.runoob-block img,
+.runoob_cf img,
+footer img {
+    display: block !important;
+    visibility: visible !important;
+}
 </style>'''
                 
                 # 3. 一次性插入所有修复
@@ -220,7 +274,7 @@ def render_page(url, timeout_ms, wait_for, inject_js):
                 content = content.replace("url('../fonts/", f"url('{base}fonts/")
     
                 
-                print("[Fix] Resources and icons fixed", file=sys.stderr)
+                print("[Fix] Resources, icons and anti-hiding fixed", file=sys.stderr)
             
             browser.close()
             
