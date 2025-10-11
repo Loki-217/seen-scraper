@@ -1,6 +1,6 @@
-// services/web/js/modules/field-manager.js
+// services/web/js/modules/field-manager-v2.js
 /**
- * 📋 字段管理模块
+ * 📋 字段管理模块 v2.0 - 增加回调支持
  */
 
 import { $, empty, createElement } from '../utils/dom.js';
@@ -11,13 +11,10 @@ export class FieldManager {
         this.container = $(containerId);
         this.fields = [];
         this.fieldIdCounter = 0;
+        this.onFieldsChange = null; // 🔥 新增：字段变化回调
     }
     
-    /**
-     * 添加字段
-     */
     addField(fieldData) {
-        // 检查是否已存在
         if (this.fields.some(f => f.selector === fieldData.selector)) {
             Toast.warning('该元素已经被选择');
             return null;
@@ -35,52 +32,48 @@ export class FieldManager {
         
         this.fields.push(field);
         this.render();
+        this.triggerChange(); // 🔥 触发回调
         Toast.success(`已添加字段: ${field.name}`);
         
         return field;
     }
     
-    /**
-     * 移除字段
-     */
     removeField(fieldId) {
         this.fields = this.fields.filter(f => f.id !== fieldId);
         this.render();
+        this.triggerChange(); // 🔥 触发回调
     }
     
-    /**
-     * 更新字段名
-     */
     updateFieldName(fieldId, newName) {
         const field = this.fields.find(f => f.id === fieldId);
         if (field) {
             field.name = newName;
+            this.triggerChange(); // 🔥 触发回调
         }
     }
     
-    /**
-     * 清空所有字段
-     */
     clear() {
         if (this.fields.length > 0) {
             if (confirm('确定要清空所有字段吗？')) {
                 this.fields = [];
                 this.render();
+                this.triggerChange(); // 🔥 触发回调
                 Toast.info('已清空所有字段');
             }
         }
     }
     
-    /**
-     * 获取所有字段
-     */
     getFields() {
         return this.fields;
     }
     
-    /**
-     * 渲染字段列表
-     */
+    // 🔥 触发字段变化回调
+    triggerChange() {
+        if (typeof this.onFieldsChange === 'function') {
+            this.onFieldsChange(this.fields);
+        }
+    }
+    
     render() {
         if (!this.container) return;
         
@@ -101,13 +94,9 @@ export class FieldManager {
         this.container.appendChild(fieldsList);
     }
     
-    /**
-     * 创建字段项
-     */
     createFieldItem(field) {
         const fieldItem = createElement('div', { className: 'field-item' });
         
-        // 字段头部
         const fieldHeader = createElement('div', { className: 'field-header' });
         
         const nameInput = createElement('input', {
@@ -131,7 +120,6 @@ export class FieldManager {
         fieldHeader.appendChild(typeBadge);
         fieldHeader.appendChild(removeBtn);
         
-        // 字段信息
         const fieldInfo = createElement('div', { className: 'field-info' });
         fieldInfo.innerHTML = `
             <div><strong>选择器:</strong> <code>${field.selector}</code></div>
@@ -146,22 +134,16 @@ export class FieldManager {
         return fieldItem;
     }
     
-    /**
-     * 渲染空状态
-     */
     renderEmptyState() {
         const emptyState = createElement('div', { className: 'empty-state' });
         emptyState.innerHTML = `
             <div class="empty-state-icon">📝</div>
             <p>还没有配置任何字段</p>
-            <small>选择模式并开始分析页面</small>
+            <small>点击页面元素或使用智能识别</small>
         `;
         this.container.appendChild(emptyState);
     }
     
-    /**
-     * 智能命名建议
-     */
     suggestFieldName(data) {
         const tag = (data.tagName || '').toLowerCase();
         const text = (data.text || '').toLowerCase();
@@ -181,9 +163,6 @@ export class FieldManager {
         }
     }
     
-    /**
-     * 检测属性
-     */
     detectAttribute(data) {
         const tag = (data.tagName || '').toLowerCase();
         if (tag === 'img') return 'src';
