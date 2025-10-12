@@ -3,202 +3,1275 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SeenFetch v2.0 - See it, Fetch it</title>
-    
-    <!-- CSS 模块化加载 -->
-    <link rel="stylesheet" href="css/variables.css">
-    <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/layout-v2.css">
-    <link rel="stylesheet" href="css/components.css">
+    <title>SeenFetch - See it, Fetch it | Visual Web Scraper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #f0f2f5;
+        }
+
+        /* ========== Header ========== */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            flex-shrink: 0;
+            z-index: 100;
+        }
+
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .brand-icon {
+            width: 36px;
+            height: 36px;
+            background: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .brand-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .brand-tagline {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-left: 1rem;
+            padding-left: 1rem;
+            border-left: 2px solid rgba(255,255,255,0.3);
+        }
+
+        .url-container {
+            flex: 1;
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .url-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: white;
+            color: #333;
+        }
+
+        .url-input::placeholder {
+            color: #999;
+        }
+
+        .mode-selector {
+            display: flex;
+            background: rgba(255,255,255,0.2);
+            border-radius: 8px;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        .mode-btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            background: transparent;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .mode-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .mode-btn.active {
+            background: rgba(255,255,255,0.3);
+            font-weight: 600;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        /* ========== Main Layout ========== */
+        .main-wrapper {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* 左侧工具栏（预留） */
+        .left-sidebar {
+            width: 60px;
+            background: #2c3e50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1rem 0;
+            gap: 1rem;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+        }
+
+        .sidebar-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .sidebar-icon:hover {
+            background: rgba(255,255,255,0.2);
+            transform: scale(1.1);
+        }
+
+        /* 中间内容区 */
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Web 预览区域 */
+        .preview-area {
+            flex: 1;
+            position: relative;
+            background: white;
+            margin: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .preview-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* 底部数据预览区 */
+        .data-preview-area {
+            height: 250px;
+            background: white;
+            margin: 0 1rem 1rem 1rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .preview-header h3 {
+            font-size: 1.1rem;
+            color: #333;
+        }
+
+        .btn-export {
+            background: #4CAF50;
+            color: white;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .btn-export:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+
+        .btn-export:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .preview-table-container {
+            flex: 1;
+            overflow: auto;
+        }
+
+        .preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .preview-table th {
+            background: #f5f5f5;
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #e0e0e0;
+            position: sticky;
+            top: 0;
+        }
+
+        .preview-table td {
+            padding: 0.75rem;
+            border-bottom: 1px solid #e0e0e0;
+            color: #666;
+        }
+
+        .preview-table tr:hover {
+            background: #f9f9f9;
+        }
+
+        .preview-empty {
+            text-align: center;
+            color: #999;
+            padding: 3rem;
+            font-size: 0.95rem;
+        }
+
+        /* 绿色配置按钮 */
+        .config-toggle-btn {
+            position: fixed;
+            top: 120px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+            z-index: 1000;
+            transition: all 0.3s;
+        }
+
+        .config-toggle-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(76, 175, 80, 0.5);
+        }
+
+        /* 配置弹窗 */
+        .config-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .config-modal.active {
+            display: flex;
+        }
+
+        .config-content {
+            background: #4CAF50;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .config-header {
+            background: rgba(0,0,0,0.1);
+            padding: 1.25rem 1.5rem;
+            border-radius: 16px 16px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+        }
+
+        .config-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .close-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            transition: all 0.3s;
+        }
+
+        .close-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .config-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            color: white;
+        }
+
+        .field-item {
+            background: rgba(255,255,255,0.15);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .field-header {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .field-name-input {
+            flex: 1;
+            padding: 0.5rem;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            background: rgba(255,255,255,0.9);
+            font-size: 1rem;
+            color: #333;
+        }
+
+        .field-type-badge {
+            padding: 0.5rem 0.75rem;
+            background: rgba(255,255,255,0.3);
+            color: white;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .btn-danger {
+            background: #f44336;
+            color: white;
+            padding: 0.5rem 0.75rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+        .field-info {
+            background: rgba(255,255,255,0.9);
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            color: #333;
+        }
+
+        .field-info code {
+            background: rgba(0,0,0,0.05);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+
+        .config-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-confirm {
+            flex: 1;
+            background: white;
+            color: #4CAF50;
+            font-weight: 600;
+        }
+
+        .btn-confirm:hover {
+            background: #f5f5f5;
+        }
+
+        .btn-confirm:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: white;
+            opacity: 0.8;
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Loading */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Smart Mode */
+        .smart-panel {
+            width: 100%;
+            height: 100%;
+            background: white;
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .suggestion-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .suggestion-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102,126,234,0.2);
+        }
+
+        .suggestion-card.selected {
+            background: #e8f0ff;
+            border-color: #667eea;
+        }
+
+        .action-bar {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #e0e0e0;
+        }
+    </style>
 </head>
 <body>
-    <div id="app">
-        <!-- 🔝 顶部栏（5/6 宽度居中）-->
-        <div class="header-wrapper">
-            <header class="header">
-                <div class="brand-logo">
-                    <div class="brand-icon">👁️</div>
-                    <div class="brand-name">SeenFetch</div>
-                    <div class="brand-tagline">See it, Fetch it</div>
-                </div>
-                
-                <div class="url-container">
-                    <input type="url" 
-                           class="url-input" 
-                           id="urlInput"
-                           placeholder="粘贴网页地址，开始可视化数据提取">
-                    
-                    <div class="mode-selector">
-                        <button class="mode-btn active">👆 手动</button>
-                        <button class="mode-btn">🤖 智能</button>
-                    </div>
-                    
-                    <button class="btn btn-primary" id="loadBtn">
-                        开始提取
-                    </button>
-                </div>
-            </header>
+    <!-- Header -->
+    <header class="header">
+        <div class="brand-logo">
+            <div class="brand-icon">👁️</div>
+            <div class="brand-name">SeenFetch</div>
+            <div class="brand-tagline">See it, Fetch it</div>
         </div>
         
-        <!-- 🟢 配置按钮（右上角悬浮）-->
-        <div class="config-trigger" id="configTrigger" title="打开配置面板">
-            <span style="font-size: 24px;">⚙️</span>
+        <div class="url-container">
+            <input type="url" 
+                   class="url-input" 
+                   id="urlInput"
+                   placeholder="粘贴网页地址，开始可视化数据提取">
+            
+            <div class="mode-selector">
+                <button class="mode-btn active" onclick="switchMode('manual')">👆 手动选择</button>
+                <button class="mode-btn" onclick="switchMode('smart')">🤖 智能识别</button>
+            </div>
+            
+            <button class="btn btn-primary" onclick="loadPage()">
+                开始提取
+            </button>
         </div>
-        
-        <!-- 主容器 -->
-        <div class="main-wrapper">
-            <!-- ⬅️ 左侧导航栏 -->
-            <nav class="sidebar-left">
-                <div class="nav-item active" data-tooltip="首页">🏠</div>
-                <div class="nav-item" data-tooltip="任务历史">📋</div>
-                <div class="nav-item" data-tooltip="我的数据">💾</div>
-                <div class="nav-item" data-tooltip="用户中心">👤</div>
-                <div style="flex: 1"></div>
-                <div class="nav-item" data-tooltip="帮助文档">❓</div>
-                <div class="nav-item" data-tooltip="设置">⚙️</div>
-            </nav>
-            
-            <!-- 🖥️ 主工作区 -->
-            <main class="main-content">
-                <!-- 面包屑导航 -->
-                <div class="breadcrumb-nav">
-                    <span class="breadcrumb-item">首页</span>
-                    <span class="breadcrumb-separator">›</span>
-                    <span class="breadcrumb-item">新建任务</span>
-                    <span class="breadcrumb-separator">›</span>
-                    <span class="breadcrumb-item" style="color: var(--brand-primary);">配置字段</span>
-                </div>
-                
-                <!-- 预览区域 -->
-                <div class="preview-container">
-                    <div id="manualMode" class="preview-pane">
-                        <iframe id="previewFrame" style="width: 100%; height: 100%; border: none;"></iframe>
-                    </div>
-                    
-                    <div id="smartMode" class="preview-pane hidden">
-                        <div style="padding: var(--space-xl);">
-                            <h2>🤖 智能分析结果</h2>
-                            <div id="suggestionsList"></div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- 📊 底部数据预览区 -->
-                <section class="data-preview-section">
-                    <!-- 表格预览（1/3）-->
-                    <div class="table-preview">
-                        <div class="table-preview-header">
-                            <h4>📋 数据预览</h4>
-                            <div class="field-status">
-                                <span class="status-badge success" id="fieldCountBadge">0 字段</span>
-                                <span class="status-badge warning" id="statusBadge">未确认</span>
-                            </div>
-                        </div>
-                        <div class="table-content" id="tablePreview">
-                            <div class="empty-state" style="padding: 2rem;">
-                                <p style="color: var(--text-tertiary); text-align: center;">
-                                    配置字段后预览数据
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 统计信息区域（2/3）-->
-                    <div class="stats-area">
-                        <div class="stat-card">
-                            <div>
-                                <h5>预计采集</h5>
-                                <div class="value" id="estimatedRows">0</div>
-                            </div>
-                            <div class="label">数据行</div>
-                        </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #4CAF50, #45a049);">
-                            <div>
-                                <h5>已配置</h5>
-                                <div class="value" id="configuredFields">0</div>
-                            </div>
-                            <div class="label">字段</div>
-                        </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #f44336, #e53935);">
-                            <div>
-                                <h5>字段状态</h5>
-                                <div class="value" id="fieldValidation">⚠️</div>
-                            </div>
-                            <div class="label" id="validationLabel">待确认</div>
-                        </div>
-                    </div>
-                </section>
-            </main>
-            
-            <!-- ➡️ 右侧快捷工具栏 -->
-            <aside class="sidebar-right">
-                <div class="quick-tool" data-tooltip="AI 助手" title="AI 助手">🤖</div>
-                <div class="quick-tool" data-tooltip="数据预览" title="切换预览">👁️</div>
-                <div class="quick-tool" data-tooltip="导出" title="导出数据">📥</div>
-                <div class="quick-tool" data-tooltip="截图" title="截图">📸</div>
-                <div style="flex: 1"></div>
-                <div class="quick-tool" data-tooltip="反馈" title="反馈问题">💬</div>
-            </aside>
-        </div>
-        
-        <!-- 🎨 配置抽屉（从右侧滑出）-->
-        <div class="drawer-overlay" id="drawerOverlay"></div>
-        <aside class="config-drawer" id="configDrawer">
-            <div class="drawer-header">
-                <h3>⚙️ 采集配置</h3>
-                <button class="drawer-close" id="drawerClose">✕</button>
+    </header>
+    
+    <!-- Main Wrapper -->
+    <div class="main-wrapper">
+        <!-- 左侧工具栏（预留） -->
+        <aside class="left-sidebar">
+            <div class="sidebar-icon" title="功能预留">
+                🏠
             </div>
-            
-            <!-- 标签页 -->
-            <div class="tab-container" style="padding: 0 var(--space-md);">
-                <button class="tab active" data-tab="fields">采集字段</button>
-                <button class="tab" data-tab="settings">高级设置</button>
+            <div class="sidebar-icon" title="功能预留">
+                👤
             </div>
-            
-            <div style="flex: 1; overflow-y: auto; padding: var(--space-md);">
-                <!-- 字段列表 -->
-                <div id="fieldsTab" class="tab-content active">
-                    <div id="fieldsList"></div>
-                </div>
-                
-                <!-- 设置 -->
-                <div id="settingsTab" class="tab-content hidden">
-                    <div style="padding: var(--space-md);">
-                        <label style="display: block; margin-bottom: var(--space-md);">
-                            <strong>最大采集数量</strong>
-                            <input type="number" 
-                                   id="maxItems" 
-                                   value="100" 
-                                   min="1"
-                                   max="10000"
-                                   style="width: 100%; padding: var(--space-sm); margin-top: var(--space-xs); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
-                        </label>
-                        
-                        <label style="display: flex; align-items: center; gap: var(--space-sm); margin-top: var(--space-md);">
-                            <input type="checkbox" id="autoPaging" checked>
-                            <span>自动翻页</span>
-                        </label>
-                        
-                        <label style="display: flex; align-items: center; gap: var(--space-sm); margin-top: var(--space-sm);">
-                            <input type="checkbox" id="removeDuplicates" checked>
-                            <span>去除重复数据</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-            
-            <div style="padding: var(--space-md); border-top: 1px solid var(--border-color); background: var(--gray-50);">
-                <button class="btn btn-success btn-block" id="startScrapingBtn">
-                    🚀 开始采集
-                </button>
-                <button class="btn btn-secondary btn-block" id="clearFieldsBtn" style="margin-top: var(--space-sm);">
-                    清空字段
-                </button>
+            <div class="sidebar-icon" title="功能预留">
+                ⚙️
             </div>
         </aside>
+        
+        <!-- 中间内容区 -->
+        <div class="content-area">
+            <!-- Web 预览区 -->
+            <div class="preview-area">
+                <div id="manualMode" style="width: 100%; height: 100%;">
+                    <div id="loadingOverlay" class="loading-overlay hidden">
+                        <div class="spinner"></div>
+                        <p style="margin-top: 1rem; color: #666;">正在加载页面...</p>
+                    </div>
+                    <iframe id="previewFrame" class="preview-iframe"></iframe>
+                </div>
+                
+                <div id="smartMode" class="smart-panel hidden">
+                    <h2>🤖 智能分析结果</h2>
+                    
+                    <div id="smartLoading" class="loading-overlay hidden">
+                        <div class="spinner"></div>
+                        <p style="margin-top: 1rem; color: #666;">AI正在分析页面结构...</p>
+                    </div>
+                    
+                    <div id="suggestionsList"></div>
+                    
+                    <div class="action-bar">
+                        <button class="btn btn-primary" style="flex: 1" onclick="applySmartSelections()">
+                            应用选中的字段
+                        </button>
+                        <button class="btn" style="background: #e0e0e0" onclick="selectAllSuggestions()">
+                            全选
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 底部数据预览区 -->
+            <div class="data-preview-area">
+                <div class="preview-header">
+                    <h3>📊 数据预览</h3>
+                    <button class="btn-export" id="exportBtn" onclick="exportData()" disabled>
+                        📥 导出数据
+                    </button>
+                </div>
+                <div class="preview-table-container">
+                    <div id="previewContent" class="preview-empty">
+                        请先确认字段名设置，然后点击"确认配置"以预览数据
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     
-    <!-- JS 模块化加载 -->
-    <script type="module" src="js/app-v2.js"></script>
+    <!-- 绿色配置按钮 -->
+    <button class="config-toggle-btn" onclick="toggleConfigModal()" title="配置采集字段">
+        ⚙️
+    </button>
+    
+    <!-- 配置弹窗 -->
+    <div class="config-modal" id="configModal" onclick="closeModalOnBackdrop(event)">
+        <div class="config-content" onclick="event.stopPropagation()">
+            <div class="config-header">
+                <h2>📋 采集配置</h2>
+                <button class="close-btn" onclick="toggleConfigModal()">✕</button>
+            </div>
+            
+            <div class="config-body">
+                <div id="fieldsList">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📝</div>
+                        <p>还没有配置任何字段</p>
+                        <small>选择模式并开始分析页面</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="config-footer">
+                <button class="btn btn-confirm" id="confirmBtn" onclick="confirmFields()" disabled>
+                    ✓ 确认配置
+                </button>
+                <button class="btn btn-secondary" onclick="clearFields()">
+                    清空
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+        let currentMode = 'manual';
+        let currentUrl = '';
+        let configuredFields = [];
+        let smartSuggestions = [];
+        let selectedSuggestions = new Set();
+        let fieldsConfirmed = false;
+        let currentRunId = null;
+        
+        // 切换模式
+        function switchMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.textContent.includes(mode === 'manual' ? '手动' : '智能'));
+            });
+            
+            document.getElementById('manualMode').classList.toggle('hidden', mode !== 'manual');
+            document.getElementById('smartMode').classList.toggle('hidden', mode === 'manual');
+        }
+        
+        // 切换配置弹窗
+        function toggleConfigModal() {
+            document.getElementById('configModal').classList.toggle('active');
+        }
+        
+        // 点击背景关闭弹窗
+        function closeModalOnBackdrop(event) {
+            if (event.target.id === 'configModal') {
+                toggleConfigModal();
+            }
+        }
+        
+        // 加载页面
+        async function loadPage() {
+            const url = document.getElementById('urlInput').value.trim();
+            if (!url) {
+                alert('请输入网页地址');
+                return;
+            }
+            
+            currentUrl = url;
+            fieldsConfirmed = false;
+            updateConfirmButton();
+            clearPreview();
+            
+            if (currentMode === 'manual') {
+                await loadManualMode(url);
+            } else {
+                await loadSmartMode(url);
+            }
+        }
+        
+        // 手动模式加载
+        async function loadManualMode(url) {
+            const loading = document.getElementById('loadingOverlay');
+            loading.classList.remove('hidden');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/proxy/render`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, timeout_ms: 30000 })
+                });
+                
+                if (!response.ok) throw new Error('加载失败');
+                
+                const data = await response.json();
+                document.getElementById('previewFrame').srcdoc = data.html;
+                
+            } catch (error) {
+                alert('加载失败: ' + error.message);
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+        
+        // 智能模式加载
+        async function loadSmartMode(url) {
+            const loading = document.getElementById('smartLoading');
+            loading.classList.remove('hidden');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/smart/analyze?url=${encodeURIComponent(url)}`, {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) throw new Error('分析失败');
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displaySmartResults(data);
+                } else {
+                    alert('分析失败: ' + data.error);
+                }
+                
+            } catch (error) {
+                alert('分析失败: ' + error.message);
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+        
+        // 显示智能分析结果
+        function displaySmartResults(data) {
+            smartSuggestions = data.suggestions || [];
+            const container = document.getElementById('suggestionsList');
+            
+            if (smartSuggestions.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #999;">未找到可采集的字段</p>';
+                return;
+            }
+            
+            container.innerHTML = smartSuggestions.map((sug, idx) => `
+                <div class="suggestion-card" onclick="toggleSuggestion(${idx})">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; font-size: 1.1rem;">${sug.name}</span>
+                        <span style="padding: 0.25rem 0.75rem; background: #667eea; color: white; border-radius: 12px; font-size: 0.75rem;">${sug.type}</span>
+                    </div>
+                    <div style="color: #666; font-size: 0.9rem; margin-top: 0.5rem;">
+                        <strong>选择器:</strong> <code>${sug.selector}</code><br>
+                        <strong>数量:</strong> ${sug.count} 个
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // 切换建议选中
+        function toggleSuggestion(idx) {
+            const card = document.querySelectorAll('.suggestion-card')[idx];
+            card.classList.toggle('selected');
+            
+            if (selectedSuggestions.has(idx)) {
+                selectedSuggestions.delete(idx);
+            } else {
+                selectedSuggestions.add(idx);
+            }
+        }
+        
+        // 全选建议
+        function selectAllSuggestions() {
+            document.querySelectorAll('.suggestion-card').forEach((card, idx) => {
+                card.classList.add('selected');
+                selectedSuggestions.add(idx);
+            });
+        }
+        
+        // 应用智能选择
+        function applySmartSelections() {
+            if (selectedSuggestions.size === 0) {
+                alert('请至少选择一个字段');
+                return;
+            }
+            
+            configuredFields = [];
+            selectedSuggestions.forEach(idx => {
+                const sug = smartSuggestions[idx];
+                configuredFields.push({
+                    name: sug.name,
+                    selector: sug.selector,
+                    type: sug.type,
+                    attr: sug.type === 'image' ? 'src' : (sug.type === 'link' ? 'href' : 'text')
+                });
+            });
+            
+            renderFields();
+            toggleConfigModal();
+        }
+        
+        // 渲染字段列表
+        function renderFields() {
+            const container = document.getElementById('fieldsList');
+            
+            if (configuredFields.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📝</div>
+                        <p>还没有配置任何字段</p>
+                        <small>选择模式并开始分析页面</small>
+                    </div>
+                `;
+                updateConfirmButton();
+                return;
+            }
+            
+            container.innerHTML = configuredFields.map((field, idx) => `
+                <div class="field-item">
+                    <div class="field-header">
+                        <input class="field-name-input"
+                               value="${field.name}"
+                               onchange="updateFieldName(${idx}, this.value)"
+                               placeholder="字段名称">
+                        <span class="field-type-badge">${field.attr}</span>
+                        <button class="btn-danger" onclick="removeField(${idx})">删除</button>
+                    </div>
+                    <div class="field-info">
+                        <strong>选择器:</strong> <code>${field.selector}</code>
+                    </div>
+                </div>
+            `).join('');
+            
+            updateConfirmButton();
+        }
+        
+        // 更新字段名
+        function updateFieldName(idx, name) {
+            configuredFields[idx].name = name;
+            fieldsConfirmed = false;
+            updateConfirmButton();
+        }
+        
+        // 移除字段
+        function removeField(idx) {
+            configuredFields.splice(idx, 1);
+            fieldsConfirmed = false;
+            renderFields();
+            clearPreview();
+        }
+        
+        // 清空字段
+        function clearFields() {
+            if (configuredFields.length > 0) {
+                if (confirm('确定要清空所有字段吗？')) {
+                    configuredFields = [];
+                    fieldsConfirmed = false;
+                    renderFields();
+                    clearPreview();
+                }
+            }
+        }
+        
+        // 更新确认按钮状态
+        function updateConfirmButton() {
+            const btn = document.getElementById('confirmBtn');
+            btn.disabled = configuredFields.length === 0 || fieldsConfirmed;
+            btn.textContent = fieldsConfirmed ? '✓ 已确认' : '✓ 确认配置';
+        }
+        
+        // 确认字段配置
+        async function confirmFields() {
+            if (configuredFields.length === 0) {
+                alert('请先配置字段');
+                return;
+            }
+            
+            // 检查是否所有字段都有名称
+            const unnamedFields = configuredFields.filter(f => !f.name || f.name.trim() === '');
+            if (unnamedFields.length > 0) {
+                alert('请为所有字段命名');
+                return;
+            }
+            
+            fieldsConfirmed = true;
+            updateConfirmButton();
+            toggleConfigModal();
+            
+            // 开始采集
+            await startScraping();
+        }
+        
+        // 开始采集
+        async function startScraping() {
+            if (!fieldsConfirmed || configuredFields.length === 0) {
+                alert('请先确认字段配置');
+                return;
+            }
+            
+            const jobName = `采集任务_${new Date().toLocaleString()}`;
+            
+            try {
+                // 显示loading
+                showPreviewLoading();
+                
+                // 创建任务
+                const jobData = {
+                    name: jobName,
+                    start_url: currentUrl,
+                    status: "active",
+                    selectors: configuredFields.map(field => ({
+                        name: field.name,
+                        css: field.selector,
+                        attr: field.attr,
+                        
+                        limit: 100
+                    }))
+                };
+                
+                const jobRes = await fetch(`${API_BASE}/jobs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(jobData)
+                });
+                
+                if (!jobRes.ok) throw new Error('创建任务失败');
+                const job = await jobRes.json();
+                
+                // 执行采集
+                const runRes = await fetch(`${API_BASE}/runs/jobs/${job.id}/run`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: currentUrl, limit: 100 })
+                });
+                
+                if (!runRes.ok) throw new Error('启动采集失败');
+                const run = await runRes.json();
+                currentRunId = run.run_id;
+                
+                // 等待采集完成并获取结果
+                setTimeout(async () => {
+                    await fetchResults(currentRunId);
+                }, 3000);
+                
+            } catch (error) {
+                alert('采集失败: ' + error.message);
+                clearPreview();
+            }
+        }
+        
+        // 获取采集结果
+        async function fetchResults(runId) {
+            try {
+                const resultRes = await fetch(`${API_BASE}/runs/${runId}/results`);
+                if (!resultRes.ok) throw new Error('获取结果失败');
+                
+                const results = await resultRes.json();
+                renderPreview(results);
+                
+                // 启用导出按钮
+                document.getElementById('exportBtn').disabled = false;
+                
+            } catch (error) {
+                alert('获取结果失败: ' + error.message);
+                clearPreview();
+            }
+        }
+        
+        // 渲染数据预览
+        function renderPreview(results) {
+            const container = document.getElementById('previewContent');
+            
+            if (!results || Object.keys(results).length === 0) {
+                container.innerHTML = `
+                    <div class="preview-empty">
+                        未采集到数据，请检查选择器配置
+                    </div>
+                `;
+                return;
+            }
+            
+            // 获取所有字段名
+            const columns = Object.keys(results);
+            
+            // 找出最大行数
+            const maxRows = Math.max(...columns.map(col => results[col].length));
+            
+            // 生成表格
+            let html = '<table class="preview-table"><thead><tr>';
+            columns.forEach(col => {
+                html += `<th>${col}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            
+            // 生成数据行
+            for (let i = 0; i < maxRows; i++) {
+                html += '<tr>';
+                columns.forEach(col => {
+                    const value = results[col][i] || '';
+                    html += `<td>${escapeHtml(value)}</td>`;
+                });
+                html += '</tr>';
+            }
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+        
+        // 显示预览加载状态
+        function showPreviewLoading() {
+            const container = document.getElementById('previewContent');
+            container.innerHTML = `
+                <div class="preview-empty">
+                    <div class="spinner" style="margin: 0 auto 1rem;"></div>
+                    正在采集数据...
+                </div>
+            `;
+        }
+        
+        // 清空预览
+        function clearPreview() {
+            const container = document.getElementById('previewContent');
+            container.innerHTML = `
+                <div class="preview-empty">
+                    请先确认字段名设置，然后点击"确认配置"以预览数据
+                </div>
+            `;
+            document.getElementById('exportBtn').disabled = true;
+            currentRunId = null;
+        }
+        
+        // 导出数据
+        function exportData() {
+            if (!currentRunId) {
+                alert('没有可导出的数据');
+                return;
+            }
+            
+            const exportURL = `${API_BASE}/runs/${currentRunId}/export?format=csv`;
+            window.open(exportURL, '_blank');
+        }
+        
+        // HTML 转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 监听 iframe 消息（手动模式点击元素）
+window.addEventListener('message', async (event) => {
+    if (event.data && event.data.type === 'element-clicked') {
+        const element = event.data.element;
+        
+        // 🔥 调用 AI 建议字段名
+        let suggestedName = '字段';
+        try {
+            // 显示加载提示
+            const loadingToast = showToast('🤖 AI 正在分析...', 'info');
+            
+            const aiResponse = await fetch(`${API_BASE}/api/ai/suggest-field-name`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    element: {
+                        text: element.text || '',
+                        tagName: element.tagName || '',
+                        className: element.className || '',
+                        id: element.id || '',
+                        href: element.href || '',
+                        src: element.src || ''
+                    },
+                    context: {
+                        previousText: '',
+                        parentClassName: '',
+                        surroundingText: element.text || '',
+                        isInList: false,
+                        pageType: 'unknown'
+                    }
+                })
+            });
+            
+            if (aiResponse.ok) {
+                const aiResult = await aiResponse.json();
+                suggestedName = aiResult.fieldName || suggestedName;
+                console.log(`[AI] 建议字段名: ${suggestedName} (置信度: ${aiResult.confidence}, 来源: ${aiResult.source})`);
+            }
+            
+            // 移除加载提示
+            if (loadingToast) loadingToast.remove();
+            
+        } catch (error) {
+            console.warn('[AI] 字段名建议失败，使用默认规则:', error);
+            // 降级到本地规则
+            suggestedName = suggestFieldNameLocal(element);
+        }
+        
+        // 显示确认对话框，允许用户修改
+        const finalName = prompt(
+            `AI 建议字段名: ${suggestedName}\n\n` +
+            `标签: ${element.tagName}\n` +
+            `文本: ${element.text}\n` +
+            `选择器: ${element.selector}\n\n` +
+            `请确认或修改字段名称：`,
+            suggestedName
+        );
+        
+        if (finalName && finalName.trim()) {
+            configuredFields.push({
+                name: finalName.trim(),
+                selector: element.selector,
+                type: element.tagName,
+                attr: element.tagName === 'IMG' ? 'src' : (element.tagName === 'A' ? 'href' : 'text')
+            });
+            fieldsConfirmed = false;
+            renderFields();
+            
+            // 自动打开配置弹窗
+            document.getElementById('configModal').classList.add('active');
+            
+            showToast(`✅ 已添加字段: ${finalName}`, 'success');
+        }
+    }
+});
+
+// 本地规则建议字段名（降级方案）
+function suggestFieldNameLocal(element) {
+    const tag = (element.tagName || '').toLowerCase();
+    const text = (element.text || '').toLowerCase();
+    const className = (element.className || '').toLowerCase();
+    
+    // 标签规则
+    if (tag === 'h1' || tag === 'h2' || tag === 'h3') {
+        return '标题';
+    } else if (tag === 'h4' || tag === 'h5') {
+        return '副标题';
+    } else if (tag === 'a') {
+        return '链接';
+    } else if (tag === 'img') {
+        return '图片';
+    }
+    
+    // 内容规则
+    if (text.includes('￥') || text.includes('$') || text.includes('价格') || text.includes('price')) {
+        return '价格';
+    }
+    if (text.includes('时间') || text.includes('日期') || text.includes('发布')) {
+        return '时间';
+    }
+    if (text.includes('评分') || text.includes('分数') || className.includes('rating') || className.includes('score')) {
+        return '评分';
+    }
+    if (text.includes('作者') || className.includes('author')) {
+        return '作者';
+    }
+    if (text.includes('标签') || className.includes('tag')) {
+        return '标签';
+    }
+    
+    // 长度规则
+    if (text.length > 100) {
+        return '描述';
+    } else if (text.length > 50) {
+        return '简介';
+    }
+    
+    return `字段${configuredFields.length + 1}`;
+}
+
+// Toast 提示函数
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 90px;
+        right: 20px;
+        background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#667eea'};
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 9999;
+        font-size: 0.95rem;
+        animation: slideIn 0.3s ease;
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // 3秒后自动移除
+    setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+    
+    return toast;
+}
+
+// 添加动画样式
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    @keyframes slideOut {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+    }
+`;
+document.head.appendChild(style);
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('urlInput').focus();
+            document.getElementById('urlInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') loadPage();
+            });
+        });
+    </script>
 </body>
 </html>
+
+
+
