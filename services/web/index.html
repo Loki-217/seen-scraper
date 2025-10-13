@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SeenFetch - See it, Fetch it | Visual Web Scraper</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
+    
+    <!-- 样式表 -->
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/utilities.css">
+</head>
+<body>
+    <!-- 🔥 添加 #app 包裹器 -->
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="brand-logo">
+                <div class="brand-icon">👁️</div>
+                <div class="brand-name">SeenFetch</div>
+                <div class="brand-tagline">See it, Fetch it</div>
+            </div>
+            
+            <div class="url-container">
+                <input type="url" class="url-input" id="urlInput" 
+                       placeholder="粘贴网页地址，开始可视化数据提取">
+                
+                <div class="mode-selector">
+                    <button class="mode-btn active" data-mode="manual">👆 手动选择</button>
+                    <button class="mode-btn" data-mode="smart">🤖 智能识别</button>
+                </div>
+                
+                <button class="btn btn-primary" id="loadBtn">开始提取</button>
+            </div>
+        </header>
+        
+        <!-- Main Container -->
+        <div class="main-wrapper">
+            <!-- 左侧工具栏 -->
+            <aside class="left-sidebar">
+                <div class="sidebar-icon" title="首页">🏠</div>
+                <div class="sidebar-icon" title="历史">📜</div>
+                <div class="sidebar-icon" title="设置">⚙️</div>
+            </aside>
+            
+            <!-- 中间内容区 -->
+            <div class="content-area">
+                <!-- Web 预览区 -->
+                <div class="preview-area">
+                    <!-- 手动模式 -->
+                    <div id="manualMode" style="width: 100%; height: 100%;">
+                        <div id="loadingOverlay" class="loading-overlay hidden">
+                            <div class="spinner"></div>
+                            <p class="loading-text">正在加载页面...</p>
+                        </div>
+                        <iframe id="previewFrame" class="preview-iframe"></iframe>
+                    </div>
+                    
+                    <!-- 智能模式 -->
+                    <div id="smartMode" class="smart-panel hidden">
+                        <h2>🤖 智能分析结果</h2>
+                        
+                        <div id="smartLoading" class="loading-overlay hidden">
+                            <div class="spinner"></div>
+                            <p class="loading-text">AI正在分析页面结构...</p>
+                        </div>
+                        
+                        <!-- 统计信息 -->
+                        <div id="statsBox" class="stats-box hidden">
+                            <h3>页面统计</h3>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <div class="stat-value" id="statWords">0</div>
+                                    <div class="stat-label">总词数</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value" id="statLinks">0</div>
+                                    <div class="stat-label">链接数</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value" id="statImages">0</div>
+                                    <div class="stat-label">图片数</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 建议列表 -->
+                        <div id="suggestionsList"></div>
+                        
+                        <!-- 操作栏 -->
+                        <div class="action-bar">
+                            <button class="btn btn-primary" id="applySmartBtn">应用选中的字段</button>
+                            <button class="btn btn-secondary" id="selectAllBtn">全选</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 底部数据预览区 -->
+                <div class="data-preview-area">
+                    <div class="preview-header">
+                        <h3>📊 数据预览</h3>
+                        <button class="btn-export" id="exportBtn" disabled>📥 导出数据</button>
+                    </div>
+                    <div class="preview-table-container">
+                        <div id="previewContent" class="preview-empty">
+                            请先确认字段名设置，然后点击"确认配置"以预览数据
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 配置按钮 -->
+    <button class="config-toggle-btn" id="configToggle" title="配置采集字段">⚙️</button>
+    
+    <!-- 配置弹窗 -->
+    <div class="config-modal" id="configModal">
+        <div class="config-content" onclick="event.stopPropagation()">
+            <div class="config-header">
+                <h2>📋 采集配置</h2>
+                <button class="close-btn" id="closeConfigBtn">✕</button>
+            </div>
+            
+            <div class="config-body">
+                <div id="fieldsList">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📝</div>
+                        <p>还没有配置任何字段</p>
+                        <small>选择模式并开始分析页面</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="config-footer">
+                <button class="btn btn-confirm" id="confirmBtn" disabled>✓ 确认配置</button>
+                <button class="btn btn-secondary" id="clearFieldsBtn">清空</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- JavaScript 模块 -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

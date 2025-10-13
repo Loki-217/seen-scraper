@@ -1,40 +1,47 @@
-// services/web/js/modules/smart-mode.js
-/**
- * 🤖 智能识别模式
- */
-
-import { $, show, hide, empty, createElement } from '../utils/dom.js';
-import { apiClient } from '../api/client.js';
+// 智能模式模块
 import { Toast } from '../ui/toast.js';
-import { Loading } from '../ui/loading.js';
+import { CONFIG } from '../config.js';
+
+// 🔥 简化工具函数
+function $(id) {
+    return document.getElementById(id);
+}
+
+function show(element) {
+    if (element) element.classList.remove('hidden');
+}
+
+function hide(element) {
+    if (element) element.classList.add('hidden');
+}
 
 export class SmartMode {
-    constructor(fieldManager) {
+    constructor(apiClient, fieldManager) {
+        console.log('[SmartMode] Constructor called');
+        this.apiClient = apiClient;
         this.fieldManager = fieldManager;
-        this.container = $('smartMode');
-        this.resultsContainer = $('suggestionsList');
+        this.loading = $('smartLoading');
         this.statsBox = $('statsBox');
-        this.loading = new Loading('smartMode', 'AI 正在分析页面结构...');
+        this.suggestionsList = $('suggestionsList');
         
         this.suggestions = [];
         this.selectedIndices = new Set();
     }
     
-    /**
-     * 分析页面
-     */
     async analyzePage(url) {
+        console.log('[SmartMode] analyzePage called');
+        
         if (!url) {
             Toast.error('请输入网页地址');
             return false;
         }
         
-        this.loading.show();
+        if (this.loading) show(this.loading);
         
         try {
-            console.log('[SmartMode] Analyzing:', url);
+            console.log('[SmartMode] Calling API...');
             
-            const data = await apiClient.analyzePage(url);
+            const data = await this.apiClient.post(`${CONFIG.ENDPOINTS.SMART_ANALYZE}?url=${encodeURIComponent(url)}`);
             
             if (data.success) {
                 this.displayResults(data);
@@ -50,116 +57,72 @@ export class SmartMode {
             Toast.error('分析失败: ' + error.message);
             return false;
         } finally {
-            this.loading.hide();
+            if (this.loading) hide(this.loading);
         }
     }
     
-    /**
-     * 显示分析结果
-     */
     displayResults(data) {
-        // 显示统计信息
-        if (data.stats) {
-            this.displayStats(data.stats);
+        // 显示统计
+        if (data.stats && this.statsBox) {
+            show(this.statsBox);
+            const statWords = $('statWords');
+            const statLinks = $('statLinks');
+            const statImages = $('statImages');
+            
+            if (statWords) statWords.textContent = data.stats.total_words || 0;
+            if (statLinks) statLinks.textContent = data.stats.total_links || 0;
+            if (statImages) statImages.textContent = data.stats.total_images || 0;
         }
         
-        // 显示字段建议
+        // 显示建议
         this.suggestions = data.suggestions || [];
         
+        if (!this.suggestionsList) {
+            console.error('[SmartMode] suggestionsList element not found');
+            return;
+        }
+        
         if (this.suggestions.length === 0) {
-            this.displayEmptyState();
+            this.suggestionsList.innerHTML = '<p style="text-align: center; color: #999;">未找到可采集的字段</p>';
             return;
         }
         
         this.renderSuggestions();
     }
     
-    /**
-     * 显示统计信息
-     */
-    displayStats(stats) {
-        show(this.statsBox);
-        
-        $('statWords').textContent = stats.total_words || 0;
-        $('statLinks').textContent = stats.total_links || 0;
-        $('statImages').textContent = stats.total_images || 0;
-    }
-    
-    /**
-     * 渲染建议列表
-     */
     renderSuggestions() {
-        empty(this.resultsContainer);
+        if (!this.suggestionsList) return;
         
-        this.suggestions.forEach((suggestion, index) => {
-            const card = this.createSuggestionCard(suggestion, index);
-            this.resultsContainer.appendChild(card);
+        this.suggestionsList.innerHTML = this.suggestions.map((sug, idx) => `
+            <div class="suggestion-card" data-index="${idx}">
+                <div class="suggestion-header">
+                    <span class="suggestion-name">${sug.name}</span>
+                    <span class="suggestion-type">${sug.type}</span>
+                </div>
+                <div class="suggestion-info">
+                    <strong>选择器:</strong> <code>${sug.selector}</code><br>
+                    <strong>数量:</strong> ${sug.count} 个
+                </div>
+                ${sug.sample_data && sug.sample_data.length > 0 ? `
+                    <div style="background: white; padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; font-size: 0.85rem; max-height: 100px; overflow-y: auto;">
+                        <strong>示例:</strong><br>
+                        ${sug.sample_data.map(s => `• ${s}`).join('<br>')}
+                    </div>
+                ` : ''}
+            </div>
+        `).join('');
+        
+        // 🔥 添加点击事件
+        this.suggestionsList.querySelectorAll('.suggestion-card').forEach((card, idx) => {
+            card.addEventListener('click', () => this.toggleSuggestion(idx));
         });
     }
     
-    /**
-     * 创建建议卡片
-     */
-    createSuggestionCard(suggestion, index) {
-        const card = createElement('div', {
-            className: 'suggestion-card',
-            onclick: () => this.toggleSuggestion(index)
-        });
-        
-        // 头部
-        const header = createElement('div', { className: 'suggestion-header' });
-        
-        const name = createElement('span', {
-            className: 'suggestion-name'
-        }, [suggestion.name]);
-        
-        const type = createElement('span', {
-            className: 'suggestion-type'
-        }, [suggestion.type]);
-        
-        header.appendChild(name);
-        header.appendChild(type);
-        
-        // 信息
-        const info = createElement('div', { className: 'suggestion-info' });
-        info.innerHTML = `
-            <strong>选择器:</strong> <code>${suggestion.selector}</code><br>
-            <strong>数量:</strong> ${suggestion.count} 个
-        `;
-        
-        // 示例数据
-        let samples = null;
-        if (suggestion.sample_data && suggestion.sample_data.length > 0) {
-            samples = createElement('div', { className: 'suggestion-samples' });
-            samples.innerHTML = `
-                <strong>示例:</strong><br>
-                ${suggestion.sample_data.map(s => `• ${s}`).join('<br>')}
-            `;
-        }
-        
-        // 置信度条
-        const confidenceBar = createElement('div', { className: 'confidence-bar' });
-        const confidenceFill = createElement('div', {
-            className: 'confidence-fill',
-            style: { width: `${(suggestion.confidence || 0.5) * 100}%` }
-        });
-        confidenceBar.appendChild(confidenceFill);
-        
-        // 组装
-        card.appendChild(header);
-        card.appendChild(info);
-        if (samples) card.appendChild(samples);
-        card.appendChild(confidenceBar);
-        
-        return card;
-    }
-    
-    /**
-     * 切换选中状态
-     */
     toggleSuggestion(index) {
-        const cards = this.resultsContainer.querySelectorAll('.suggestion-card');
+        const cards = this.suggestionsList.querySelectorAll('.suggestion-card');
         const card = cards[index];
+        
+        if (!card) return;
         
         if (this.selectedIndices.has(index)) {
             this.selectedIndices.delete(index);
@@ -170,70 +133,40 @@ export class SmartMode {
         }
     }
     
-    /**
-     * 全选
-     */
     selectAll() {
-        const cards = this.resultsContainer.querySelectorAll('.suggestion-card');
+        const cards = this.suggestionsList?.querySelectorAll('.suggestion-card');
+        if (!cards) return;
+        
         cards.forEach((card, index) => {
             card.classList.add('selected');
             this.selectedIndices.add(index);
         });
     }
     
-    /**
-     * 应用选中的建议
-     */
-    applySelectedSuggestions() {
+    applySelections() {
         if (this.selectedIndices.size === 0) {
             Toast.warning('请至少选择一个字段');
             return;
         }
         
         this.selectedIndices.forEach(index => {
-            const suggestion = this.suggestions[index];
+            const sug = this.suggestions[index];
             this.fieldManager.addField({
-                name: suggestion.name,
-                selector: suggestion.selector,
-                type: suggestion.type,
-                attr: suggestion.type === 'image' ? 'src' : (suggestion.type === 'link' ? 'href' : 'text'),
-                samples: suggestion.sample_data || []
+                name: sug.name,
+                selector: sug.selector,
+                type: sug.type,
+                attr: sug.type === 'image' ? 'src' : (sug.type === 'link' ? 'href' : 'text'),
+                samples: sug.sample_data || []
             });
         });
         
         Toast.success(`已添加 ${this.selectedIndices.size} 个字段`);
-        
-        // 清空选中状态
         this.selectedIndices.clear();
-    }
-    
-    /**
-     * 显示空状态
-     */
-    displayEmptyState() {
-        empty(this.resultsContainer);
-        const emptyState = createElement('div', { className: 'empty-state' });
-        emptyState.innerHTML = `
-            <div class="empty-state-icon">🤖</div>
-            <p>未找到可采集的字段</p>
-            <small>请尝试其他页面或使用手动模式</small>
-        `;
-        this.resultsContainer.appendChild(emptyState);
-    }
-    
-    /**
-     * 显示模式
-     */
-    show() {
-        show(this.container);
-    }
-    
-    /**
-     * 隐藏模式
-     */
-    hide() {
-        hide(this.container);
+        
+        // 清除选中状态
+        const cards = this.suggestionsList?.querySelectorAll('.suggestion-card');
+        if (cards) {
+            cards.forEach(card => card.classList.remove('selected'));
+        }
     }
 }
-
-export default SmartMode;

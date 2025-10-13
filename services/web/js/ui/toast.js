@@ -1,50 +1,67 @@
-// services/web/js/ui/toast.js
-/**
- * 🍞 Toast 消息提示组件
- */
-
-import { CONFIG } from '../config.js';
-import { createElement } from '../utils/dom.js';
-
+// Toast 提示组件
 export class Toast {
-    static show(message, type = 'success', duration = CONFIG.UI.TOAST_DURATION) {
-        // 创建 toast 元素
-        const toast = createElement('div', {
-            className: `toast ${type}`
-        }, [message]);
+    static show(message, type = 'success', duration = 3000) {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed;
+            top: 90px;
+            right: 20px;
+            background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : type === 'warning' ? '#fbbf24' : '#667eea'};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 9999;
+            font-size: 0.95rem;
+            animation: slideIn 0.3s ease;
+        `;
         
-        // 添加到页面
+        const icons = {
+            success: '✅',
+            error: '❌',
+            warning: '⚠️',
+            info: 'ℹ️'
+        };
+        
+        toast.textContent = `${icons[type] || ''} ${message}`;
         document.body.appendChild(toast);
         
-        // 自动移除
         setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateX(100%)';
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.parentNode.removeChild(toast);
-                }
-            }, 300);
+            toast.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
         }, duration);
-        
-        return toast;
     }
     
     static success(message, duration) {
-        return this.show(`✅ ${message}`, 'success', duration);
+        this.show(message, 'success', duration);
     }
     
     static error(message, duration) {
-        return this.show(`❌ ${message}`, 'error', duration);
-    }
-    
-    static info(message, duration) {
-        return this.show(`ℹ️ ${message}`, 'info', duration);
+        this.show(message, 'error', duration);
     }
     
     static warning(message, duration) {
-        return this.show(`⚠️ ${message}`, 'warning', duration);
+        this.show(message, 'warning', duration);
+    }
+    
+    static info(message, duration) {
+        this.show(message, 'info', duration);
     }
 }
 
-export default Toast;
+// 添加动画样式
+if (!document.querySelector('#toast-styles')) {
+    const style = document.createElement('style');
+    style.id = 'toast-styles';
+    style.textContent = `
+        @keyframes slideIn {
+            from { transform: translateX(400px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(400px); opacity: 0; }
+        }
+    `;
+    document.head.appendChild(style);
+}

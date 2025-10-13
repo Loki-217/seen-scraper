@@ -1,13 +1,9 @@
-// services/web/js/ui/loading.js
-/**
- * ⏳ Loading 加载组件
- */
-
-import { createElement, $ } from '../utils/dom.js';
+// 加载组件
+import { createElement } from '../utils/dom.js';
 
 export class Loading {
-    constructor(container, text = '加载中...') {
-        this.container = typeof container === 'string' ? $(container) : container;
+    constructor(containerId, text = '加载中...') {
+        this.container = document.getElementById(containerId);
         this.text = text;
         this.overlay = null;
     }
@@ -18,10 +14,14 @@ export class Loading {
         if (!this.overlay) {
             this.overlay = createElement('div', {
                 className: 'loading-overlay'
-            }, [
-                createElement('div', { className: 'spinner' }),
-                createElement('p', { className: 'loading-text' }, [this.text])
-            ]);
+            });
+            
+            const spinner = createElement('div', { className: 'spinner' });
+            const loadingText = createElement('p', { className: 'loading-text' });
+            loadingText.textContent = this.text;
+            
+            this.overlay.appendChild(spinner);
+            this.overlay.appendChild(loadingText);
         } else {
             this.overlay.querySelector('.loading-text').textContent = this.text;
         }
@@ -40,7 +40,8 @@ export class Loading {
     setText(text) {
         this.text = text;
         if (this.overlay) {
-            this.overlay.querySelector('.loading-text').textContent = text;
+            const textEl = this.overlay.querySelector('.loading-text');
+            if (textEl) textEl.textContent = text;
         }
         return this;
     }
