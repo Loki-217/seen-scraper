@@ -36,6 +36,9 @@ from .smart_extractor_subprocess import SmartExtractor
 from typing import Dict
 
 from .routers.ai import router as ai_router
+
+from pydantic import BaseModel, Field
+from typing import Optional
 # ---------- 应用生命周期 ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -189,21 +192,28 @@ def templates_preview(req: TemplatePreviewReq):
         samples=samples,
     )
 
-# 添加新端点（在其他路由后面）
-@app.post("/api/smart/analyze")
-async def smart_analyze(url: str):
-    """智能分析页面结构"""
-    extractor = SmartExtractor()
-    result = await extractor.analyze_page(url)
-    return result
+class SmartAnalyzeRequest(BaseModel):
+    """智能分析请求"""
+    url: str = Field(..., description="目标网址")
+    auto_scroll: bool = Field(default=True, description="是否自动滚动加载")
+    use_stealth: bool = Field(default=False, description="是否启用隐身模式")
+    use_markdown: bool = Field(default=False, description="是否使用 Markdown 分析")
+    wait_for: Optional[str] = Field(default=None, description="等待的 CSS 选择器")
 
-# API 端点保持不变
 @app.post("/api/smart/analyze")
-async def smart_analyze(url: str):
-    """智能分析页面结构"""
+async def smart_analyze(req: SmartAnalyzeRequest):  # 🔥 注意：参数是 req，不是 url
+    """智能分析页面结构（增强版）"""
     try:
         extractor = SmartExtractor()
-        result = await extractor.analyze_page(url)
+        result = await extractor.analyze_page(
+            url=req.url,  # 🔥 从请求体中获取
+            config={
+                "auto_scroll": req.auto_scroll,
+                "use_stealth": req.use_stealth,
+                "use_markdown": req.use_markdown,
+                "wait_for": req.wait_for
+            }
+        )
         return result
     except Exception as e:
         import traceback

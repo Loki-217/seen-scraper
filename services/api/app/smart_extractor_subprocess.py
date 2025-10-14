@@ -26,7 +26,7 @@ class SmartExtractor:
             r'[\$€£¥]\s*[\d,]+\.?\d*',
             r'[\d,]+\.?\d*\s*[\$€£¥元]',
             r'(?:价格|售价|Price|price)[：:]\s*[\d,]+\.?\d*',
-            r'\d+\.\d{2}',  # 精确到分的价格
+            r'\d+\.\d{2}',
         ],
         'date': [
             r'\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?',
@@ -38,7 +38,7 @@ class SmartExtractor:
             r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
         ],
         'phone': [
-            r'1[3-9]\d{9}',  # 中国手机
+            r'1[3-9]\d{9}',
             r'\+?\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}',
         ],
         'url': [
@@ -46,31 +46,67 @@ class SmartExtractor:
         ]
     }
     
-    async def analyze_page(self, url: str) -> Dict[str, Any]:
-        """分析页面并返回字段建议"""
+    async def analyze_page(self, url: str, config: dict = None) -> Dict[str, Any]:
+        """
+        分析页面并返回字段建议
+        
+        Args:
+            url: 目标网址
+            config: {
+                "auto_scroll": bool,
+                "use_stealth": bool,
+                "use_markdown": bool,
+                "wait_for": str
+            }
+        """
         try:
-            runner_path = os.path.join(os.path.dirname(__file__), 'crawler_runner.py')
+            # 使用 V2 爬虫
+            runner_path = os.path.join(os.path.dirname(__file__), 'crawler_runner_v2.py')
             
-            print(f"[SmartExtractor] Crawling: {url}")
-            
-            result = subprocess.run(
-                [sys.executable, runner_path, url],
-                capture_output=True,
-                timeout=60
-            )
+            # 检查文件是否存在
+            if not os.path.exists(runner_path):
+                # 降级到旧版
+                runner_path = os.path.join(os.path.dirname(__file__), 'crawler_runner.py')
+                print(f"[SmartExtractor] 使用旧版爬虫: {runner_path}")
+                
+                result = subprocess.run(
+                    [sys.executable, runner_path, url],
+                    capture_output=True,
+                    timeout=60
+                )
+            else:
+                # 新版支持配置
+                crawl_config = {
+                    "auto_scroll": config.get('auto_scroll', True) if config else True,
+                    "use_stealth": config.get('use_stealth', False) if config else False,
+                    "wait_for": config.get('wait_for') if config else None
+                }
+                
+                print(f"[SmartExtractor] 使用新版爬虫，配置: {crawl_config}")
+                
+                params = json.dumps({
+                    "url": url,
+                    "config": crawl_config
+                })
+                
+                result = subprocess.run(
+                    [sys.executable, runner_path, params],
+                    capture_output=True,
+                    timeout=60
+                )
             
             if result.returncode != 0:
                 error_msg = result.stderr.decode('utf-8', errors='ignore') if result.stderr else "Unknown error"
-                print(f"[SmartExtractor] Crawler stderr:\n{error_msg}")
+                print(f"[SmartExtractor] 爬虫错误:\n{error_msg}")
             
             if not result.stdout:
                 return {
                     "success": False,
-                    "error": f"Crawler failed with code {result.returncode}",
+                    "error": f"爬虫失败，返回码 {result.returncode}",
                     "suggestions": []
                 }
             
-            # 处理输出编码
+            # 解析输出
             try:
                 output_text = result.stdout.decode('utf-8')
             except UnicodeDecodeError:
@@ -80,46 +116,52 @@ class SmartExtractor:
                     output_text = result.stdout.decode('utf-8', errors='ignore')
             
             try:
-                data = json.loads(output_text) if output_text else {}
+                data = json.loads(output_text)
             except json.JSONDecodeError as e:
-                print(f"[SmartExtractor] JSON parse error: {e}")
+                print(f"[SmartExtractor] JSON解析错误: {e}")
+                print(f"[SmartExtractor] 输出内容: {output_text[:500]}")
                 return {
                     "success": False,
-                    "error": f"JSON parse error: {str(e)}",
+                    "error": f"JSON解析错误: {str(e)}",
                     "suggestions": []
                 }
             
             if not data.get('success'):
                 return {
                     "success": False,
-                    "error": data.get('error', 'Crawl failed'),
+                    "error": data.get('error', '爬取失败'),
                     "suggestions": []
                 }
             
-            # 🔥 关键改进：多维度分析
+            # 多维度分析
             suggestions = []
             
-            # 1. 结构化数据分析（最重要）
-            if data.get('html'):
-                soup = BeautifulSoup(data['html'], 'lxml')
-                suggestions.extend(self._analyze_structure(soup))
+            # 选择分析模式
+            use_markdown = config.get('use_markdown', False) if config else False
             
-            # 2. 语义分析
+            if use_markdown and data.get('fit_markdown'):
+                print("[SmartExtractor] 使用 Markdown 分析模式")
+                suggestions.extend(self._analyze_markdown_advanced(data['fit_markdown']))
+            else:
+                # HTML 模式（默认）
+                if data.get('html'):
+                    soup = BeautifulSoup(data['html'], 'lxml')
+                    suggestions.extend(self._analyze_structure(soup))
+            
+            # 其他分析维度
             if data.get('markdown'):
                 suggestions.extend(self._analyze_markdown(data['markdown']))
             
-            # 3. 模式匹配
             if data.get('text'):
                 suggestions.extend(self._analyze_patterns(data['text']))
             
-            # 4. 链接和媒体
             if data.get('links'):
                 suggestions.extend(self._analyze_links(data['links']))
             
             if data.get('media'):
                 suggestions.extend(self._analyze_media(data['media']))
             
-            # 🔥 去重和排序
+            # 去重和排序
             suggestions = self._deduplicate_suggestions(suggestions)
             suggestions = sorted(suggestions, key=lambda x: x.confidence, reverse=True)
             
@@ -128,7 +170,8 @@ class SmartExtractor:
                 "url": url,
                 "title": self._extract_title(data),
                 "suggestions": [s.dict() for s in suggestions],
-                "stats": self._extract_stats(data)
+                "stats": self._extract_stats(data),
+                "config_used": crawl_config if os.path.exists(os.path.join(os.path.dirname(__file__), 'crawler_runner_v2.py')) else {}
             }
             
         except subprocess.TimeoutExpired:
@@ -148,15 +191,14 @@ class SmartExtractor:
             }
     
     def _analyze_structure(self, soup: BeautifulSoup) -> List[FieldSuggestion]:
-        """🔥 结构化数据分析 - 最核心的功能"""
+        """结构化数据分析 - 最核心的功能"""
         suggestions = []
         
         # 检测列表项（最常见的采集目标）
         for list_container in ['ul', 'ol', 'div[class*="list"]', 'table tbody']:
             items = soup.select(f'{list_container} > li, {list_container} > tr, {list_container} > div')
             
-            if len(items) >= 3:  # 至少3个重复项
-                # 分析第一个项的结构
+            if len(items) >= 3:
                 first_item = items[0]
                 
                 # 标题
@@ -206,15 +248,13 @@ class SmartExtractor:
         for table in tables:
             rows = table.select('tr')
             if len(rows) >= 3:
-                # 检测表头
                 headers = table.select('th')
                 if headers:
                     for idx, header in enumerate(headers[:5]):
                         header_text = header.get_text(strip=True)
                         if header_text:
-                            # 获取该列的示例数据
                             col_data = []
-                            for row in rows[1:4]:  # 取3行示例
+                            for row in rows[1:4]:
                                 cells = row.select('td')
                                 if idx < len(cells):
                                     col_data.append(cells[idx].get_text(strip=True)[:50])
@@ -235,7 +275,6 @@ class SmartExtractor:
         """分析 Markdown 内容"""
         suggestions = []
         
-        # H1-H3 标题
         for level, name in [(1, "主标题"), (2, "副标题"), (3, "三级标题")]:
             pattern = f"^{'#' * level} (.+)$"
             matches = re.findall(pattern, markdown, re.MULTILINE)
@@ -251,6 +290,85 @@ class SmartExtractor:
         
         return suggestions
     
+    def _analyze_markdown_advanced(self, fit_markdown: str) -> List[FieldSuggestion]:
+        """基于精简 Markdown 的高级分析"""
+        suggestions = []
+        
+        # 1. 提取所有链接
+        links = re.findall(r'\[([^\]]+)\]\(([^\)]+)\)', fit_markdown)
+        if len(links) >= 3:
+            link_texts = [link[0] for link in links if link[0].strip()]
+            suggestions.append(FieldSuggestion(
+                name="链接文本",
+                selector="a[href]",
+                type="text",
+                confidence=0.9,
+                sample_data=link_texts[:3],
+                count=len(links)
+            ))
+            
+            link_urls = [link[1] for link in links if link[1].strip()]
+            suggestions.append(FieldSuggestion(
+                name="链接地址",
+                selector="a[href]",
+                type="link",
+                confidence=0.9,
+                sample_data=link_urls[:3],
+                count=len(links)
+            ))
+        
+        # 2. 提取所有图片
+        images = re.findall(r'!\[([^\]]*)\]\(([^\)]+)\)', fit_markdown)
+        if len(images) >= 2:
+            suggestions.append(FieldSuggestion(
+                name="图片",
+                selector="img[src]",
+                type="image",
+                confidence=0.95,
+                sample_data=[img[1][:50] for img in images[:3]],
+                count=len(images)
+            ))
+        
+        # 3. 提取标题层级
+        for level in [1, 2, 3]:
+            pattern = f"^{'#' * level} (.+)$"
+            headers = re.findall(pattern, fit_markdown, re.MULTILINE)
+            if len(headers) >= 2:
+                suggestions.append(FieldSuggestion(
+                    name=f"H{level}标题",
+                    selector=f"h{level}",
+                    type="text",
+                    confidence=0.85,
+                    sample_data=[h.strip()[:50] for h in headers[:3]],
+                    count=len(headers)
+                ))
+        
+        # 4. 提取列表项
+        list_items = re.findall(r'^[\*\-\+] (.+)$', fit_markdown, re.MULTILINE)
+        if len(list_items) >= 3:
+            suggestions.append(FieldSuggestion(
+                name="列表项",
+                selector="li",
+                type="text",
+                confidence=0.8,
+                sample_data=[item.strip()[:50] for item in list_items[:3]],
+                count=len(list_items)
+            ))
+        
+        # 5. 提取价格
+        prices = re.findall(r'[\$€£¥]\s*[\d,]+\.?\d*|[\d,]+\.?\d*\s*元', fit_markdown)
+        if len(prices) >= 2:
+            suggestions.append(FieldSuggestion(
+                name="价格",
+                selector="[class*='price'], .price, [class*='money']",
+                type="text",
+                confidence=0.85,
+                sample_data=list(set(prices))[:3],
+                count=len(set(prices))
+            ))
+        
+        return suggestions
+    
     def _analyze_patterns(self, text: str) -> List[FieldSuggestion]:
         """模式匹配分析"""
         suggestions = []
@@ -262,7 +380,6 @@ class SmartExtractor:
                 all_matches.extend(matches)
             
             if all_matches:
-                # 去重
                 unique_matches = list(set(all_matches))
                 if len(unique_matches) >= 2:
                     suggestions.append(FieldSuggestion(
@@ -334,10 +451,8 @@ class SmartExtractor:
     def _deduplicate_suggestions(self, suggestions: List[FieldSuggestion]) -> List[FieldSuggestion]:
         """去重建议"""
         seen = {}
-        result = []
         
         for sug in suggestions:
-            # 使用 selector 作为唯一标识
             key = sug.selector
             if key not in seen or sug.confidence > seen[key].confidence:
                 seen[key] = sug

@@ -1,15 +1,19 @@
+# services/api/app/routers/runs.py
 from __future__ import annotations
 
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from bs4 import BeautifulSoup
-import httpx
+import subprocess
+import sys
+import os
+import json
 
 from ..db import session_scope
 from .. import crud, schemas
 
-# 两个路由：/runs/... 与 /runs/jobs/{job_id}/run
+# 两个路由
 router = APIRouter(prefix="/runs", tags=["runs"])
 router_jobs = APIRouter(prefix="/runs/jobs", tags=["runs"])
 
@@ -22,7 +26,74 @@ class RunStartResp(BaseModel):
     run_id: int
     status: str
 
-# ---------- 背景执行 ----------
+# ---------- 🔥 新增：使用 Crawl4AI 爬取 ----------
+def _crawl_with_crawler_runner(url: str) -> str:
+    """使用 crawler_runner_v2.py 爬取页面"""
+    runner_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), 
+        'crawler_runner_v2.py'
+    )
+    
+    # 检查文件是否存在
+    if not os.path.exists(runner_path):
+        # 降级到旧版
+        runner_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), 
+            'crawler_runner.py'
+        )
+        print(f"[Run] 使用旧版爬虫: {runner_path}")
+        
+        # 旧版只支持 URL
+        result = subprocess.run(
+            [sys.executable, runner_path, url],
+            capture_output=True,
+            timeout=60
+        )
+    else:
+        # 新版支持配置
+        print(f"[Run] 使用新版爬虫: {runner_path}")
+        params = json.dumps({
+            "url": url,
+            "config": {
+                "auto_scroll": True,
+                "use_stealth": False,
+                "wait_for": None
+            }
+        })
+        
+        result = subprocess.run(
+            [sys.executable, runner_path, params],
+            capture_output=True,
+            timeout=60
+        )
+    
+    if result.returncode != 0:
+        error_msg = result.stderr.decode('utf-8', errors='ignore')
+        print(f"[Run] 爬虫错误: {error_msg}")
+        raise Exception(f"爬虫失败: {error_msg[:200]}")
+    
+    # 解析输出
+    try:
+        output_text = result.stdout.decode('utf-8')
+    except UnicodeDecodeError:
+        try:
+            output_text = result.stdout.decode('gbk')
+        except:
+            output_text = result.stdout.decode('utf-8', errors='ignore')
+    
+    try:
+        data = json.loads(output_text)
+    except json.JSONDecodeError as e:
+        print(f"[Run] JSON 解析错误: {e}")
+        raise Exception(f"JSON 解析失败: {str(e)}")
+    
+    if not data.get('success'):
+        raise Exception(f"爬取失败: {data.get('error', 'Unknown error')}")
+    
+    return data.get('html', '')
+
+
+# ---------- 🔥 修改：背景执行函数 ----------
 def _execute_run(run_id: int, job_id: int, url: str, limit: int) -> None:
     with session_scope() as s:
         crud.set_run_running(s, run_id)
@@ -34,25 +105,45 @@ def _execute_run(run_id: int, job_id: int, url: str, limit: int) -> None:
 
         rows, pages = 0, 1
         try:
-            resp = httpx.get(url, timeout=10.0)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "lxml")
+            print(f"[Run] 开始采集: {url}")
+            
+            # 🔥 使用 Crawl4AI 爬取（支持 JavaScript 渲染）
+            html = _crawl_with_crawler_runner(url)
+            
+            print(f"[Run] 爬取成功，HTML 长度: {len(html)}")
+            
+            soup = BeautifulSoup(html, "lxml")
 
+            # 提取数据
             for sel in job.selectors:
                 css = sel.css
                 attr = (sel.attr or "text").lower()
                 maxn = sel.limit or limit
-                for idx, el in enumerate(soup.select(css)[: min(maxn, limit)]):
+                
+                print(f"[Run] 提取字段: {sel.name}, 选择器: {css}, 属性: {attr}")
+                
+                elements = soup.select(css)
+                print(f"[Run] 找到 {len(elements)} 个元素")
+                
+                for idx, el in enumerate(elements[: min(maxn, limit)]):
                     if attr == "text":
                         val = el.get_text(strip=True)
                     else:
                         val = (el.get(attr) or "").strip()
-                    crud.add_result(s, run_id, sel.name, idx, val, url)
-                    rows += 1
+                    
+                    if val:  # 只保存非空值
+                        crud.add_result(s, run_id, sel.name, idx, val, url)
+                        rows += 1
 
+            print(f"[Run] 采集完成，共 {rows} 条数据")
             crud.finish_run(s, run_id, status="succeeded", stats={"rows": rows, "pages": pages})
+            
         except Exception as e:
+            print(f"[Run] 采集失败: {e}")
+            import traceback
+            traceback.print_exc()
             crud.finish_run(s, run_id, status="failed", stats={"error": str(e)})
+
 
 # ---------- 发起运行 ----------
 @router_jobs.post("/{job_id}/run", response_model=RunStartResp, summary="Run Job")
