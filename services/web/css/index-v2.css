@@ -795,4 +795,37 @@ body {
     }
 }
 
+/* 用户自选字段的样式 */
+.suggestion-card.user-selected {
+    border: 2px solid #4CAF50 !important;
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2) !important;
+}
+
+/* 预览表格样式优化 */
+.preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.preview-table th {
+    background: #f5f5f5;
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 2px solid #e0e0e0;
+    position: sticky;
+    top: 0;
+}
+
+.preview-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #e0e0e0;
+    color: #666;
+}
+
+.preview-table tr:hover {
+    background: #f9f9f9;
+}
 
