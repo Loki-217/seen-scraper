@@ -536,3 +536,263 @@ body {
 .hidden {
     display: none !important;
 }
+
+/* ========== 智能模式增强样式 ========== */
+
+/* 分屏布局 */
+.smart-preview-pane,
+.smart-analysis-pane {
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+/* 建议卡片增强 */
+.suggestion-card {
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.suggestion-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(102,126,234,0.25) !important;
+}
+
+.suggestion-card.selected {
+    border-color: #667eea !important;
+    background: linear-gradient(135deg, #e8f0ff 0%, #f0f4ff 100%) !important;
+}
+
+/* 按钮链接样式 */
+.btn-link {
+    background: none;
+    border: none;
+    color: #667eea;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0.25rem 0.5rem;
+    transition: all 0.3s;
+    font-weight: 600;
+}
+
+.btn-link:hover {
+    color: #764ba2;
+    text-decoration: underline;
+    transform: translateX(2px);
+}
+
+/* 动画 */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* 响应式：小屏幕改为上下布局 */
+@media (max-width: 1200px) {
+    #smartMode {
+        flex-direction: column !important;
+    }
+    
+    .smart-preview-pane {
+        height: 40%;
+        margin-right: 0 !important;
+        margin-bottom: 0.5rem;
+    }
+    
+    .smart-analysis-pane {
+        height: 60%;
+    }
+}
+
+/* ========================================
+   智能模式分屏布局（完整版）
+   ======================================== */
+
+/* 主容器 */
+#smartMode {
+    display: flex !important;
+    height: 100% !important;
+    padding: 0 !important;
+    gap: 0.5rem;
+    overflow: hidden;
+}
+
+#smartMode.hidden {
+    display: none !important;
+}
+
+/* 左侧预览面板 */
+.smart-preview-pane {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    border-radius: 12px;
+    overflow: hidden;
+    background: white;
+}
+
+/* 右侧分析面板 */
+.smart-analysis-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    min-width: 0;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+/* 标题栏 */
+.smart-preview-pane > div:first-child,
+.smart-analysis-pane > div:first-child {
+    padding: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    flex-shrink: 0;
+}
+
+.smart-preview-pane h3,
+.smart-analysis-pane h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+/* iframe 容器 */
+.smart-preview-pane > div:nth-child(2) {
+    position: relative;
+    flex: 1;
+    background: white;
+    overflow: hidden;
+    min-height: 0;
+}
+
+#smartPreviewFrame {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+/* 分析面板内部容器 */
+.smart-analysis-pane > div:nth-child(2) {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* 🔥 建议列表容器（关键修复） */
+#suggestionsList {
+    flex: 1 1 auto !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 1rem !important;
+    min-height: 0 !important;
+    max-height: none !important;
+}
+
+/* 🔥 自定义滚动条样式 */
+#suggestionsList::-webkit-scrollbar {
+    width: 10px;
+}
+
+#suggestionsList::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 5px;
+    margin: 4px;
+}
+
+#suggestionsList::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 5px;
+}
+
+#suggestionsList::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #5568d3 0%, #6a3f8e 100%);
+}
+
+/* Firefox 滚动条 */
+#suggestionsList {
+    scrollbar-width: thin;
+    scrollbar-color: #667eea #f1f1f1;
+}
+
+/* 建议卡片 */
+#suggestionsList .suggestion-card {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+#suggestionsList .suggestion-card:last-child {
+    margin-bottom: 0.5rem;
+}
+
+#suggestionsList .suggestion-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(102,126,234,0.25);
+    border-color: #667eea;
+}
+
+#suggestionsList .suggestion-card.selected {
+    border-color: #667eea;
+    background: linear-gradient(135deg, #e8f0ff 0%, #f0f4ff 100%);
+}
+
+/* 底部操作栏 */
+.smart-analysis-pane .action-bar {
+    padding: 1rem;
+    border-top: 2px solid #e0e0e0;
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    background: white;
+}
+
+/* Loading 遮罩 */
+#smartPreviewLoading,
+#smartLoading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+/* 响应式：小屏幕 */
+@media (max-width: 1200px) {
+    #smartMode {
+        flex-direction: column !important;
+    }
+    
+    .smart-preview-pane {
+        height: 40%;
+        margin-bottom: 0.5rem;
+    }
+    
+    .smart-analysis-pane {
+        height: 60%;
+    }
+}
+
+

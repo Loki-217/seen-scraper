@@ -14,7 +14,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+
 
 def log(message):
     """输出日志到 stderr"""
