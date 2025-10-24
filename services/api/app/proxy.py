@@ -221,7 +221,7 @@ def render_page(url, timeout_ms, wait_for, inject_js):
                 # 1. 添加 <base> 标签
                 base_tag = f'<base href="{base}">'
                 
-                # 2. 添加字体图标库（支持多个版本）
+                # 2. 添加字体图标库(支持多个版本)
                 icon_libs = r'''
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" crossorigin="anonymous">
@@ -236,7 +236,7 @@ def render_page(url, timeout_ms, wait_for, inject_js):
     font-display: swap;
 }
 
-/* 🔥 强制显示所有隐藏元素（反反调试） */
+/* 🔥 强制显示所有隐藏元素(反反调试) */
 .runoob-block,
 .runoob_cf,
 div[style*="display: none"],

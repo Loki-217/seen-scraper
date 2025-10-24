@@ -13,8 +13,7 @@ let selectedSuggestions = new Set();
 let fieldsConfirmed = false;
 let currentRunId = null;
 
-// ==================== 工具函数 ====================
-
+// ========== 工具函数（保持不变）==========
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -55,7 +54,7 @@ function showToast(message, type = 'info', duration = 3000) {
     return toast;
 }
 
-// Toast 动画样式
+// Toast 动画
 const toastStyle = document.createElement('style');
 toastStyle.textContent = `
     @keyframes slideIn {
@@ -69,8 +68,151 @@ toastStyle.textContent = `
 `;
 document.head.appendChild(toastStyle);
 
-// ==================== 模式切换 ====================
+// ========== 🔥 增强版手动模式加载 ==========
+async function loadManualMode(url) {
+    const loading = document.getElementById('loadingOverlay');
+    loading.classList.remove('hidden');
+    
+    try {
+        console.log('[Manual] Loading:', url);
+        
+        const response = await fetch(`${API_BASE}/api/proxy/render`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                url, 
+                timeout_ms: 30000,
+                enhanced_scroll: true,  // 🔥 启用增强滚动
+                max_scroll_attempts: 10  // 🔥 最多滚动10次
+            })
+        });
+        
+        console.log('[Manual] Response status:', response.status);
+        
+        // 🔥 改进的反爬检测
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('[Manual] Error:', errorData);
+            
+            // 检测反爬错误（HTTP 403）
+            if (response.status === 403 || errorData.detail?.error_type === 'anti_scraping') {
+                showAntiScrapingModal(url, errorData.detail);
+                return;
+            }
+            
+            // 检测超时错误（HTTP 408）
+            if (response.status === 408) {
+                if (confirm('⏱️ 请求超时\n\n该网页加载时间过长。是否切换到智能模式重试？')) {
+                    switchToSmartMode(url);
+                }
+                return;
+            }
+            
+            throw new Error(errorData.detail?.error || 'Request failed');
+        }
+        
+        const data = await response.json();
+        console.log('[Manual] Data received, success:', data.success);
+        
+        // 二次检查：即使返回200，也可能有反爬
+        if (!data.success && data.error_type === 'anti_scraping') {
+            showAntiScrapingModal(url, data);
+            return;
+        }
+        
+        // 加载到 iframe
+        document.getElementById('previewFrame').srcdoc = data.html;
+        console.log('[Manual] ✅ Page loaded successfully');
+        
+    } catch (error) {
+        console.error('[Manual] Exception:', error);
+        
+        // 网络错误 - 可能是反爬
+        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+            showAntiScrapingModal(url, {
+                error: 'Network error - possible anti-scraping',
+                suggestion: 'The website may be blocking automated access'
+            });
+        } else {
+            alert('加载失败: ' + error.message);
+        }
+    } finally {
+        loading.classList.add('hidden');
+    }
+}
 
+// 🔥 改进的反爬提示弹窗
+function showAntiScrapingModal(url, errorDetail = {}) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>🛡️ 检测到反爬虫保护</h3>
+                <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid #ffc107;">
+                    <strong>⚠️ 该网站启用了反爬虫保护</strong><br>
+                    <span style="color: #856404; font-size: 0.9rem;">
+                        ${errorDetail.error || '手动模式无法正常访问此网页'}
+                    </span>
+                </div>
+                
+                <div style="background: #d4edda; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid #28a745;">
+                    <strong>💡 建议使用智能模式</strong><br>
+                    <span style="color: #155724; font-size: 0.9rem;">
+                        智能模式配备了反反爬虫技术，可以绕过大多数网站的保护机制。
+                    </span>
+                </div>
+                
+                <div style="background: #f5f5f5; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <strong>🎯 可选操作：</strong>
+                    <ul style="margin: 0.5rem 0 0 1.5rem; line-height: 1.8;">
+                        <li>切换到<strong>智能模式</strong>重试（推荐）</li>
+                        <li>尝试访问其他类似网站</li>
+                        <li>联系网站管理员获取数据API</li>
+                    </ul>
+                </div>
+                
+                <details style="margin-top: 1rem; cursor: pointer;">
+                    <summary style="font-weight: 600; color: #666;">技术详情（点击展开）</summary>
+                    <pre style="background: #f8f9fa; padding: 0.75rem; border-radius: 4px; font-size: 0.85rem; overflow-x: auto; margin-top: 0.5rem;">${JSON.stringify(errorDetail, null, 2)}</pre>
+                </details>
+                
+                <p style="color: #666; font-size: 0.9rem; margin-top: 1rem;">
+                    目标网址：<br>
+                    <code style="background: #f5f5f5; padding: 4px 8px; border-radius: 4px; word-break: break-all; display: block; margin-top: 4px;">
+                        ${url}
+                    </code>
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                    取消
+                </button>
+                <button class="btn btn-primary" onclick="switchToSmartMode('${escapeAttribute(url)}'); this.closest('.modal-overlay').remove();">
+                    🚀 切换到智能模式
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function switchToSmartMode(url) {
+    switchMode('smart');
+    
+    const urlInput = document.getElementById('urlInput');
+    if (urlInput.value !== url) {
+        urlInput.value = url;
+    }
+    
+    loadPage();
+    showToast('✅ 已切换到智能模式', 'success');
+}
+
+// ========== 其他函数保持不变 ==========
 function switchMode(mode) {
     currentMode = mode;
     document.querySelectorAll('.mode-btn').forEach(btn => {
@@ -81,8 +223,6 @@ function switchMode(mode) {
     document.getElementById('smartMode').classList.toggle('hidden', mode === 'manual');
 }
 
-// ==================== 配置弹窗 ====================
-
 function toggleConfigModal() {
     document.getElementById('configModal').classList.toggle('active');
 }
@@ -92,8 +232,6 @@ function closeModalOnBackdrop(event) {
         toggleConfigModal();
     }
 }
-
-// ==================== 加载页面 ====================
 
 async function loadPage() {
     const url = document.getElementById('urlInput').value.trim();
@@ -114,101 +252,7 @@ async function loadPage() {
     }
 }
 
-// ==================== 手动模式 ====================
-
-async function loadManualMode(url) {
-    const loading = document.getElementById('loadingOverlay');
-    loading.classList.remove('hidden');
-    
-    try {
-        const response = await fetch(`${API_BASE}/api/proxy/render`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, timeout_ms: 30000 })
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            
-            if (errorData.detail?.error?.includes('blocked') || 
-                errorData.detail?.error?.includes('anti-bot') ||
-                errorData.detail?.details?.includes('anti-scraping')) {
-                showAntiScrapingModal(url);
-                return;
-            }
-            
-            throw new Error(errorData.detail?.error || 'Request failed');
-        }
-        
-        const data = await response.json();
-        document.getElementById('previewFrame').srcdoc = data.html;
-        
-    } catch (error) {
-        const errorMsg = error.message.toLowerCase();
-        if (errorMsg.includes('blocked') || 
-            errorMsg.includes('connection') || 
-            errorMsg.includes('failed')) {
-            showAntiScrapingModal(url);
-        } else {
-            alert('加载失败: ' + error.message);
-        }
-    } finally {
-        loading.classList.add('hidden');
-    }
-}
-
-function showAntiScrapingModal(url) {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-        <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header">
-                <h3>🛡️ 检测到反爬虫保护</h3>
-                <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">✕</button>
-            </div>
-            <div class="modal-body">
-                <p style="margin-bottom: 1rem; line-height: 1.6;">
-                    该网站启用了反爬虫保护，<strong>手动模式</strong>无法正常访问。
-                </p>
-                <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-                    <strong>💡 建议使用智能模式</strong><br>
-                    智能模式配备了反反爬虫技术，可以绕过大多数网站的保护机制。
-                </div>
-                <p style="color: #666; font-size: 0.9rem;">
-                    目标网址：<br>
-                    <code style="background: #f5f5f5; padding: 4px 8px; border-radius: 4px; word-break: break-all;">
-                        ${url}
-                    </code>
-                </p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
-                    取消
-                </button>
-                <button class="btn btn-primary" onclick="switchToSmartMode('${url}')">
-                    切换到智能模式
-                </button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-}
-
-function switchToSmartMode(url) {
-    document.querySelector('.modal-overlay')?.remove();
-    switchMode('smart');
-    
-    const urlInput = document.getElementById('urlInput');
-    if (urlInput.value !== url) {
-        urlInput.value = url;
-    }
-    
-    loadPage();
-    showToast('✅ 已切换到智能模式', 'success');
-}
-
-// ==================== 智能模式 ====================
-
+// 智能模式加载（保持不变，从你原来的代码）
 async function loadSmartMode(url) {
     const useAdvanced = confirm(
         '🚀 高级选项\n\n' +
@@ -233,7 +277,12 @@ async function loadSmartMode(url) {
             fetch(`${API_BASE}/api/proxy/render`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url, timeout_ms: 30000 })
+                body: JSON.stringify({ 
+                    url, 
+                    timeout_ms: 30000,
+                    enhanced_scroll: true,  // 🔥 启用增强滚动
+                    max_scroll_attempts: 10
+                })
             }).then(r => r.json()),
             
             fetch(`${API_BASE}/api/smart/analyze`, {
@@ -252,10 +301,7 @@ async function loadSmartMode(url) {
         console.log('[SmartMode] 并行加载完成');
         
         if (previewResult.success && previewResult.html) {
-            console.log('[SmartMode] 加载预览页面, HTML长度:', previewResult.html.length);
-            
             const iframe = document.getElementById('smartPreviewFrame');
-            
             const styledHtml = previewResult.html.replace(
                 '</head>',
                 `<style>
@@ -263,54 +309,22 @@ async function loadSmartMode(url) {
                         outline: 3px solid #4CAF50 !important;
                         outline-offset: 2px;
                         background: rgba(76, 175, 80, 0.15) !important;
-                        box-shadow: 0 0 10px rgba(76, 175, 80, 0.3) !important;
-                        transition: all 0.3s ease !important;
-                        position: relative !important;
-                        z-index: 999 !important;
-                    }
-                    .seenfetch-highlight::before {
-                        content: '✓ 已选中';
-                        position: absolute;
-                        top: -25px;
-                        left: 0;
-                        background: #4CAF50;
-                        color: white;
-                        padding: 2px 8px;
-                        border-radius: 4px;
-                        font-size: 12px;
-                        font-weight: bold;
-                        z-index: 1000;
                     }
                 </style></head>`
             );
             
-            try {
-                const blob = new Blob([styledHtml], { type: 'text/html; charset=utf-8' });
-                const blobUrl = URL.createObjectURL(blob);
-                
-                if (iframe.dataset.blobUrl) {
-                    URL.revokeObjectURL(iframe.dataset.blobUrl);
-                }
-                
-                iframe.src = blobUrl;
-                iframe.dataset.blobUrl = blobUrl;
-                
-                console.log('[SmartMode] 预览页面已加载 (Blob URL)');
-                
-                iframe.onload = () => {
-                    console.log('[SmartMode] iframe 加载完成');
-                };
-                
-            } catch (error) {
-                console.error('[SmartMode] Blob URL 创建失败，降级到 srcdoc:', error);
-                iframe.srcdoc = styledHtml;
+            const blob = new Blob([styledHtml], { type: 'text/html; charset=utf-8' });
+            const blobUrl = URL.createObjectURL(blob);
+            
+            if (iframe.dataset.blobUrl) {
+                URL.revokeObjectURL(iframe.dataset.blobUrl);
             }
-        } else {
-            console.warn('[SmartMode] 预览加载失败');
+            
+            iframe.src = blobUrl;
+            iframe.dataset.blobUrl = blobUrl;
         }
         
         if (analysisResult.success) {
-            console.log('[SmartMode] 显示分析结果, 字段数:', analysisResult.suggestions?.length);
             displaySmartResults(analysisResult);
             
             if (analysisResult.config_used) {
@@ -1392,5 +1406,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('urlInput').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') loadPage();
     });
+    
+    console.log('[SeenFetch] Enhanced version loaded ✅');
 });
 
