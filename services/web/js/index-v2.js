@@ -876,11 +876,15 @@ async function fetchResults(runId) {
         
         console.log('[fetchResults] 获取到的结果:', results);
         console.log('[fetchResults] 结果键:', Object.keys(results));
-        console.log('[fetchResults] 数据行数:', Object.keys(results).length > 0 ? results[Object.keys(results)[0]].length : 0);
         
         renderPreview(results);
         
-        document.getElementById('exportBtn').disabled = false;
+        // 启用对应模式的导出按钮
+        const exportBtnId = currentMode === 'manual' ? 'manualExportBtn' : 'exportBtn';
+        const exportBtn = document.getElementById(exportBtnId);
+        if (exportBtn) {
+            exportBtn.disabled = false;
+        }
         
         console.log('[fetchResults] ✅ 结果渲染完成');
         
@@ -890,11 +894,17 @@ async function fetchResults(runId) {
         clearPreview();
     }
 }
-
 // ==================== 数据预览 ====================
 
 function renderPreview(results) {
-    const container = document.getElementById('previewContent');
+    // 根据当前模式选择容器
+    const containerId = currentMode === 'manual' ? 'manualPreviewContent' : 'previewContent';
+    const container = document.getElementById(containerId);
+    
+    if (!container) {
+        console.error('[renderPreview] 找不到容器:', containerId);
+        return;
+    }
     
     if (!results || Object.keys(results).length === 0) {
         container.innerHTML = `
@@ -910,7 +920,7 @@ function renderPreview(results) {
     
     let html = '<table class="preview-table"><thead><tr>';
     columns.forEach(col => {
-        html += `<th>${col}</th>`;
+        html += `<th>${escapeHtml(col)}</th>`;
     });
     html += '</tr></thead><tbody>';
     
@@ -928,7 +938,11 @@ function renderPreview(results) {
 }
 
 function showPreviewLoading() {
-    const container = document.getElementById('previewContent');
+    const containerId = currentMode === 'manual' ? 'manualPreviewContent' : 'previewContent';
+    const container = document.getElementById(containerId);
+    
+    if (!container) return;
+    
     container.innerHTML = `
         <div class="preview-empty">
             <div class="spinner" style="margin: 0 auto 1rem;"></div>
@@ -938,13 +952,24 @@ function showPreviewLoading() {
 }
 
 function clearPreview() {
-    const container = document.getElementById('previewContent');
+    const containerId = currentMode === 'manual' ? 'manualPreviewContent' : 'previewContent';
+    const container = document.getElementById(containerId);
+    
+    if (!container) return;
+    
     container.innerHTML = `
         <div class="preview-empty">
-            请先确认字段并设置，然后点击"确认配置"以预览数据
+            请先配置字段并确认，然后开始采集数据
         </div>
     `;
-    document.getElementById('exportBtn').disabled = true;
+    
+    // 禁用对应的导出按钮
+    const exportBtnId = currentMode === 'manual' ? 'manualExportBtn' : 'exportBtn';
+    const exportBtn = document.getElementById(exportBtnId);
+    if (exportBtn) {
+        exportBtn.disabled = true;
+    }
+    
     currentRunId = null;
 }
 
@@ -1368,3 +1393,4 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') loadPage();
     });
 });
+
