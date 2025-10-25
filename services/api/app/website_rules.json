@@ -1,0 +1,216 @@
+{
+    "version": "1.0.0",
+    "last_updated": "2025-01-25",
+    "description": "智能网站识别规则库 - 常见网站的爬虫配置",
+
+    "rules": [
+        {
+            "domain": "unsplash.com",
+            "site_name": "Unsplash",
+            "site_type": "photo_sharing",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 30,
+                "scroll_delay": 3000,
+                "stable_checks": 5
+            },
+            "confidence": 1.0,
+            "notes": "高分辨率图片社区，需要长等待时间加载图片"
+        },
+        {
+            "domain": "pinterest.com",
+            "site_name": "Pinterest",
+            "site_type": "photo_sharing",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 40,
+                "scroll_delay": 3500,
+                "stable_checks": 5
+            },
+            "confidence": 1.0,
+            "notes": "瀑布流图片，反爬虫严格"
+        },
+        {
+            "domain": "xiaohongshu.com",
+            "site_name": "小红书",
+            "site_type": "social_media",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 35,
+                "scroll_delay": 3000,
+                "stable_checks": 5
+            },
+            "confidence": 1.0,
+            "notes": "图文社交平台，内容丰富"
+        },
+        {
+            "domain": "instagram.com",
+            "site_name": "Instagram",
+            "site_type": "social_media",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 40,
+                "scroll_delay": 3000,
+                "stable_checks": 5
+            },
+            "confidence": 1.0,
+            "notes": "照片社交网络，反爬虫较强"
+        },
+        {
+            "domain": "taobao.com",
+            "url_pattern": "*s.taobao.com*",
+            "site_name": "淘宝搜索",
+            "site_type": "ecommerce",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 15,
+                "scroll_delay": 2500,
+                "stable_checks": 3
+            },
+            "confidence": 0.95,
+            "notes": "电商搜索结果，滚动加载"
+        },
+        {
+            "domain": "jd.com",
+            "url_pattern": "*search.jd.com*",
+            "site_name": "京东搜索",
+            "site_type": "ecommerce",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 20,
+                "scroll_delay": 2000,
+                "stable_checks": 3
+            },
+            "confidence": 0.95,
+            "notes": "京东商品搜索"
+        },
+        {
+            "domain": "weibo.com",
+            "site_name": "微博",
+            "site_type": "social_media",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 25,
+                "scroll_delay": 2500,
+                "stable_checks": 4
+            },
+            "confidence": 1.0,
+            "notes": "微博信息流"
+        },
+        {
+            "domain": "zhihu.com",
+            "url_pattern": "*zhihu.com/question*",
+            "site_name": "知乎问题",
+            "site_type": "qa_community",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 20,
+                "scroll_delay": 2000,
+                "stable_checks": 3
+            },
+            "confidence": 0.9,
+            "notes": "知乎问答页面"
+        },
+        {
+            "domain": "douban.com",
+            "site_name": "豆瓣",
+            "site_type": "social_community",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": false,
+                "auto_scroll": true,
+                "max_scrolls": 20,
+                "scroll_delay": 2000,
+                "stable_checks": 3
+            },
+            "confidence": 0.85,
+            "notes": "豆瓣小组、影评等"
+        },
+        {
+            "domain": "bilibili.com",
+            "url_pattern": "*search.bilibili.com*",
+            "site_name": "B站搜索",
+            "site_type": "video_platform",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 25,
+                "scroll_delay": 2500,
+                "stable_checks": 4
+            },
+            "confidence": 0.95,
+            "notes": "B站视频搜索"
+        },
+        {
+            "domain": "500px.com",
+            "site_name": "500px",
+            "site_type": "photo_sharing",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 30,
+                "scroll_delay": 3000,
+                "stable_checks": 5
+            },
+            "confidence": 0.95,
+            "notes": "专业摄影作品平台"
+        },
+        {
+            "domain": "flickr.com",
+            "site_name": "Flickr",
+            "site_type": "photo_sharing",
+            "load_type": "infinite_scroll",
+            "config": {
+                "use_stealth": true,
+                "auto_scroll": true,
+                "max_scrolls": 25,
+                "scroll_delay": 2500,
+                "stable_checks": 4
+            },
+            "confidence": 0.9,
+            "notes": "老牌图片分享网站"
+        }
+    ],
+
+    "default_configs": {
+        "infinite_scroll": {
+            "use_stealth": true,
+            "auto_scroll": true,
+            "max_scrolls": 20,
+            "scroll_delay": 2500,
+            "stable_checks": 3
+        },
+        "pagination": {
+            "use_stealth": true,
+            "auto_scroll": false,
+            "max_scrolls": 0,
+            "scroll_delay": 0,
+            "stable_checks": 1
+        },
+        "static": {
+            "use_stealth": false,
+            "auto_scroll": false,
+            "max_scrolls": 0,
+            "scroll_delay": 0,
+            "stable_checks": 1
+        }
+    }
+}

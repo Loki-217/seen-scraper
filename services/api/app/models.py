@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, Boolean, Float
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -98,3 +98,39 @@ class Result(Base):
     url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
     run: Mapped[Run] = relationship(back_populates="results")
+
+
+# -------------------- WebsiteConfig --------------------
+class WebsiteConfig(Base):
+    """网站配置缓存：智能识别的网站类型和推荐配置"""
+    __tablename__ = "website_configs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    # 网站标识
+    domain: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    url_pattern: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    site_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    # 识别结果
+    site_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    load_type: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # 配置（JSON 格式）
+    config_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # AI 分析
+    ai_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # 统计信息
+    success_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    fail_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # 时间戳
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )

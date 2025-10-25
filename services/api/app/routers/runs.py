@@ -132,14 +132,45 @@ def _execute_run(run_id: int, job_id: int, url: str, limit: int) -> None:
         try:
             print(f"[Run] 开始采集: {url}")
 
-            # 🔥 解析 Job 的配置
+            # 🔥 智能识别网站类型并获取配置
             crawler_config = None
+
+            # 优先使用 Job 中保存的配置
             if job.config_json:
                 try:
                     crawler_config = json.loads(job.config_json)
                     print(f"[Run] 使用 Job 配置: {crawler_config}")
                 except json.JSONDecodeError:
-                    print(f"[Run] Job 配置解析失败，使用默认配置")
+                    print(f"[Run] Job 配置解析失败")
+
+            # 如果 Job 没有配置，使用智能识别
+            if not crawler_config:
+                print(f"[Run] Job 无配置，启动智能识别...")
+                from ..website_analyzer import get_analyzer
+
+                try:
+                    analyzer = get_analyzer()
+                    analysis_result = analyzer.analyze(url, s)
+
+                    crawler_config = analysis_result['config']
+
+                    # 显示识别信息
+                    print(f"[Run] ✓ 智能识别完成:")
+                    print(f"[Run]   - 网站: {analysis_result['site_name']}")
+                    print(f"[Run]   - 类型: {analysis_result['site_type']}")
+                    print(f"[Run]   - 加载方式: {analysis_result['load_type']}")
+                    print(f"[Run]   - 置信度: {analysis_result['confidence']}")
+                    print(f"[Run]   - 来源: {analysis_result['source']}")
+                    if analysis_result.get('reasoning'):
+                        print(f"[Run]   - 理由: {analysis_result['reasoning']}")
+
+                except Exception as e:
+                    print(f"[Run] 智能识别失败: {e}")
+                    print(f"[Run] 使用默认配置")
+                    # crawler_config 保持 None，会使用默认配置
+
+            if crawler_config:
+                print(f"[Run] 最终配置: {crawler_config}")
 
             # 🔥 使用 Crawl4AI 爬取（支持 JavaScript 渲染）
             html = _crawl_with_crawler_runner(url, crawler_config)

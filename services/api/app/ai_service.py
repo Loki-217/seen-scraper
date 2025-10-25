@@ -264,3 +264,182 @@ class AIService:
 
 # 全局实例
 ai_service = AIService()
+
+
+# ========== 网站配置分析功能 ==========
+
+def suggest_website_config(url: str, page_info: Dict) -> Dict[str, any]:
+    """
+    调用 DeepSeek 分析网站类型并推荐配置
+
+    Args:
+        url: 网站 URL
+        page_info: 页面信息摘要 {title, image_count, article_count, has_pagination, has_lazy_load, ...}
+
+    Returns:
+        {
+            "site_name": "网站名称",
+            "site_type": "photo_sharing|ecommerce|news|...",
+            "load_type": "infinite_scroll|pagination|static",
+            "config": {...},
+            "confidence": 0.95,
+            "reasoning": "判断依据"
+        }
+    """
+    if not ai_service.enabled:
+        raise Exception("AI 服务未启用")
+
+    # 构建 prompt
+    prompt = f"""请分析这个网页的数据加载方式，并推荐爬虫配置。
+
+【网站信息】
+- URL: {url}
+- 标题: {page_info.get('title', 'N/A')}
+- 图片数量: {page_info.get('image_count', 0)}
+- 文章数量: {page_info.get('article_count', 0)}
+- 列表项数量: {page_info.get('item_count', 0)}
+- 是否有翻页: {page_info.get('has_pagination', False)}
+- 是否有懒加载: {page_info.get('has_lazy_load', False)}
+
+【判断要求】
+1. 网站类型 (site_type)：
+   - photo_sharing: 图片分享网站 (Unsplash, Pinterest等)
+   - ecommerce: 电商平台
+   - news: 新闻网站
+   - social_media: 社交媒体
+   - video_platform: 视频平台
+   - general: 其他类型
+
+2. 加载方式 (load_type)：
+   - infinite_scroll: 无限滚动（滚动到底部自动加载新内容）
+   - pagination: 翻页（有"下一页"按钮）
+   - static: 静态单页（所有内容一次性加载）
+
+3. 推荐配置 (config)：
+   - use_stealth: 是否需要隐身模式（避免反爬虫）
+   - auto_scroll: 是否自动滚动
+   - max_scrolls: 最大滚动次数（10-50）
+   - scroll_delay: 每次滚动等待时间（毫秒，1000-5000）
+   - stable_checks: 稳定性检查次数（2-5）
+
+【配置建议】
+- 图片网站：scroll_delay 应该更长（3000-4000ms）
+- 反爬虫严格的网站：use_stealth 必须为 true
+- 内容多的网站：max_scrolls 增加（30-50）
+
+【输出格式】
+只返回 JSON，不要有其他内容：
+{{
+    "site_name": "网站名称",
+    "site_type": "photo_sharing",
+    "load_type": "infinite_scroll",
+    "config": {{
+        "use_stealth": true,
+        "auto_scroll": true,
+        "max_scrolls": 30,
+        "scroll_delay": 3000,
+        "stable_checks": 5
+    }},
+    "confidence": 0.95,
+    "reasoning": "简要说明判断依据（50字以内）"
+}}
+
+请开始分析："""
+
+    try:
+        headers = {
+            'Authorization': f'Bearer {ai_service.api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        payload = {
+            'model': ai_service.endpoint_id,
+            'messages': [
+                {
+                    'role': 'system',
+                    'content': '你是一个专业的网页爬虫配置专家，负责分析网站特征并推荐最优的爬虫参数。'
+                },
+                {
+                    'role': 'user',
+                    'content': prompt
+                }
+            ],
+            'temperature': 0.1,
+            'max_tokens': 500
+        }
+
+        print(f"[AI] 调用 DeepSeek 分析网站: {url}")
+
+        with httpx.Client(timeout=15.0) as client:
+            response = client.post(
+                f'{ai_service.api_base}/chat/completions',
+                headers=headers,
+                json=payload
+            )
+
+            print(f"[AI] 响应状态: {response.status_code}")
+            response.raise_for_status()
+
+            data = response.json()
+            content = data['choices'][0]['message']['content'].strip()
+
+            print(f"[AI] 响应内容: {content[:200]}...")
+
+            # 解析 JSON
+            result = _parse_website_config_response(content)
+            return result
+
+    except Exception as e:
+        print(f"[AI] 网站分析失败: {e}")
+        raise
+
+
+def _parse_website_config_response(content: str) -> Dict:
+    """解析网站配置分析的响应"""
+    try:
+        # 提取 JSON（可能有 markdown 代码块）
+        json_match = re.search(r'\{[\s\S]*\}', content)
+        if json_match:
+            result = json.loads(json_match.group())
+
+            # 验证必需字段
+            required_fields = ['site_type', 'load_type', 'config']
+            for field in required_fields:
+                if field not in result:
+                    raise ValueError(f"缺少必需字段: {field}")
+
+            # 设置默认值
+            result.setdefault('site_name', 'Unknown')
+            result.setdefault('confidence', 0.8)
+            result.setdefault('reasoning', '')
+
+            # 验证 config 字段
+            config = result['config']
+            config.setdefault('use_stealth', True)
+            config.setdefault('auto_scroll', True)
+            config.setdefault('max_scrolls', 20)
+            config.setdefault('scroll_delay', 2500)
+            config.setdefault('stable_checks', 3)
+
+            return result
+
+        raise ValueError("未找到有效的 JSON 内容")
+
+    except Exception as e:
+        print(f"[AI] 解析失败: {e}, content: {content}")
+
+        # 降级返回默认配置
+        return {
+            'site_name': 'Unknown',
+            'site_type': 'general',
+            'load_type': 'infinite_scroll',
+            'config': {
+                'use_stealth': True,
+                'auto_scroll': True,
+                'max_scrolls': 20,
+                'scroll_delay': 2500,
+                'stable_checks': 3
+            },
+            'confidence': 0.5,
+            'reasoning': 'AI 分析失败，使用默认配置'
+        }
