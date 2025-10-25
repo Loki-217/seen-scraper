@@ -48,6 +48,8 @@ class JobCreate(BaseModel):
     description: Optional[str] = Field("", description="任务描述")
     pager: Optional[PagerConf] = Field(None, description="翻页配置")
     selectors: List[SelectorIn] = Field(default_factory=list, description="字段选择器列表")
+    # 🔥 新增：爬虫配置
+    config: Optional[Dict] = Field(None, description="爬虫配置（auto_scroll, use_stealth 等）")
 
 
 class JobOut(BaseModel):
@@ -63,9 +65,34 @@ class JobOut(BaseModel):
     pager_attr: Optional[str] = None
     max_pages: Optional[int] = None
 
+    # 🔥 新增：爬虫配置（从 config_json 映射）
+    config_json: Optional[str] = None
+
     selectors: List[SelectorOut] = Field(default_factory=list)
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    @property
+    def config(self) -> Optional[Dict]:
+        """将 config_json 字符串转换为字典"""
+        if self.config_json is None:
+            return None
+        if isinstance(self.config_json, str):
+            try:
+                return json.loads(self.config_json)
+            except:
+                return None
+        return None
+
+    @field_serializer('config_json', when_used='json')
+    def serialize_config_json(self, config_json: Optional[str], _info) -> Optional[Dict]:
+        """序列化时将 config_json 转换为 config 字段"""
+        if config_json is None:
+            return None
+        try:
+            return json.loads(config_json)
+        except:
+            return None
 
 
 class JobPreviewReq(BaseModel):

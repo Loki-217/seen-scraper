@@ -27,44 +27,66 @@ class RunStartResp(BaseModel):
     status: str
 
 # ---------- 🔥 新增：使用 Crawl4AI 爬取 ----------
-def _crawl_with_crawler_runner(url: str) -> str:
-    """使用 crawler_runner_v2.py 爬取页面"""
+def _crawl_with_crawler_runner(url: str, config: Optional[Dict] = None) -> str:
+    """使用 crawler_runner_v2.py 爬取页面
+
+    Args:
+        url: 要爬取的 URL
+        config: 爬虫配置（auto_scroll, use_stealth 等），如果为 None 则使用默认配置
+    """
     runner_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), 
+        os.path.dirname(os.path.dirname(__file__)),
         'crawler_runner_v2.py'
     )
-    
+
+    # 默认配置
+    if config is None:
+        config = {
+            "auto_scroll": True,
+            "use_stealth": False,
+            "wait_for": None
+        }
+
+    print(f"[Run] 使用配置: {config}")
+
     # 检查文件是否存在
     if not os.path.exists(runner_path):
         # 降级到旧版
         runner_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), 
+            os.path.dirname(os.path.dirname(__file__)),
             'crawler_runner.py'
         )
-        print(f"[Run] 使用旧版爬虫: {runner_path}")
-        
+        print(f"[Run] 使用旧版爬虫: {runner_path}（不支持配置）")
+
         # 旧版只支持 URL
         result = subprocess.run(
             [sys.executable, runner_path, url],
             capture_output=True,
-            timeout=60
+            timeout=120  # 增加超时时间
         )
     else:
         # 新版支持配置
         print(f"[Run] 使用新版爬虫: {runner_path}")
         params = json.dumps({
             "url": url,
-            "config": {
-                "auto_scroll": True,
-                "use_stealth": False,
-                "wait_for": None
-            }
+            "config": config
         })
-        
+
+        # 根据滚动配置动态调整超时时间
+        timeout = 120  # 默认 2 分钟
+        if config.get('auto_scroll'):
+            max_scrolls = config.get('max_scrolls', 20)
+            scroll_delay = config.get('scroll_delay', 2000)
+            # 估算需要的时间：滚动次数 * 滚动延迟 + 额外时间
+            estimated_time = (max_scrolls * scroll_delay / 1000) + 60
+            timeout = max(timeout, int(estimated_time))
+
+        print(f"[Run] 超时时间: {timeout} 秒")
+
         result = subprocess.run(
             [sys.executable, runner_path, params],
             capture_output=True,
-            timeout=60
+            timeout=timeout
         )
     
     if result.returncode != 0:
@@ -106,10 +128,19 @@ def _execute_run(run_id: int, job_id: int, url: str, limit: int) -> None:
         rows, pages = 0, 1
         try:
             print(f"[Run] 开始采集: {url}")
-            
+
+            # 🔥 解析 Job 的配置
+            crawler_config = None
+            if job.config_json:
+                try:
+                    crawler_config = json.loads(job.config_json)
+                    print(f"[Run] 使用 Job 配置: {crawler_config}")
+                except json.JSONDecodeError:
+                    print(f"[Run] Job 配置解析失败，使用默认配置")
+
             # 🔥 使用 Crawl4AI 爬取（支持 JavaScript 渲染）
-            html = _crawl_with_crawler_runner(url)
-            
+            html = _crawl_with_crawler_runner(url, crawler_config)
+
             print(f"[Run] 爬取成功，HTML 长度: {len(html)}")
             
             soup = BeautifulSoup(html, "lxml")
@@ -198,7 +229,10 @@ def export_run_results(run_id: int, format: str = Query(default="csv")):
         row_idx = getattr(r, "row_idx", None) or getattr(r, "row", 0)
         value = getattr(r, "value", None) or getattr(r, "text", "")
         url = getattr(r, "url", "")
-        lines.append(f'{selector},{row_idx},"{value.replace("\"","\"\"")}","{url.replace("\"","\"\"")}"')
+        # 修复 f-string 语法问题：提前处理转义
+        escaped_value = value.replace('"', '""')
+        escaped_url = url.replace('"', '""')
+        lines.append(f'{selector},{row_idx},"{escaped_value}","{escaped_url}"')
 
     return Response(
         content="\n".join(lines),

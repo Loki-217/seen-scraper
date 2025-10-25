@@ -28,6 +28,9 @@ class Job(Base):
     pager_attr: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     max_pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
+    # 🔥 新增：爬虫配置（JSON 格式）
+    config_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False

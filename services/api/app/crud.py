@@ -73,6 +73,12 @@ def create_or_update_job(s: Session, payload: schemas.JobCreate, overwrite: bool
     overwrite=True 会清空并重建 selectors。
     """
     job = get_job_by_name(s, payload.name)
+
+    # 🔥 处理配置：将字典转换为 JSON 字符串
+    config_json = None
+    if payload.config:
+        config_json = json.dumps(payload.config, ensure_ascii=False)
+
     if not job:
         job = models.Job(
             name=payload.name,
@@ -82,6 +88,7 @@ def create_or_update_job(s: Session, payload: schemas.JobCreate, overwrite: bool
             pager_selector=(payload.pager.selector if payload.pager else None),
             pager_attr=(payload.pager.attr if payload.pager else None),
             max_pages=(payload.pager.max_pages if payload.pager else None),
+            config_json=config_json,  # 🔥 新增
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
@@ -95,6 +102,8 @@ def create_or_update_job(s: Session, payload: schemas.JobCreate, overwrite: bool
             job.pager_selector = payload.pager.selector
             job.pager_attr = payload.pager.attr
             job.max_pages = payload.pager.max_pages
+        if config_json is not None:  # 🔥 新增
+            job.config_json = config_json
         job.updated_at = datetime.utcnow()
         s.add(job)
         s.flush()

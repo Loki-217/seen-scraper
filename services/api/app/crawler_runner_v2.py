@@ -76,30 +76,176 @@ async def crawl_page_enhanced(url: str, config: dict = None):
         
         # 自动滚动
         if config.get('auto_scroll', True):
-            js_scripts.append("""
-                async function autoScroll() {
+            # 获取配置参数
+            max_scrolls = config.get('max_scrolls', 20)  # 增加默认滚动次数
+            scroll_delay = config.get('scroll_delay', 2000)  # 增加等待时间到 2 秒
+            stable_checks = config.get('stable_checks', 3)  # 稳定性检查次数
+
+            js_scripts.append(f"""
+                async function autoScrollEnhanced() {{
+                    console.log('[Scroll] Starting enhanced auto-scroll');
+                    console.log('[Scroll] Config: maxScrolls={max_scrolls}, delay={scroll_delay}ms, stableChecks={stable_checks}');
+
                     let lastHeight = document.body.scrollHeight;
-                    console.log('[Scroll] Start height:', lastHeight);
-                    
-                    for (let i = 0; i < 5; i++) {
-                        window.scrollTo(0, document.body.scrollHeight);
-                        window.scrollBy(0, 9999);
-                        
-                        document.querySelectorAll('img[loading]').forEach(img => img.loading = 'eager');
-                        
-                        await new Promise(r => setTimeout(r, 1500));
-                        
-                        let newHeight = document.body.scrollHeight;
-                        console.log(`[Scroll] Step ${i+1}: ${newHeight}px`);
-                        
-                        if (newHeight === lastHeight) break;
-                        lastHeight = newHeight;
-                    }
-                    
-                    window.scrollTo(0, 0);
-                    console.log('[Scroll] Complete');
-                }
-                await autoScroll();
+                    let stableCount = 0;
+                    let scrollCount = 0;
+                    let lastItemCount = 0;
+
+                    console.log('[Scroll] Initial height:', lastHeight);
+
+                    // 等待加载指示器的辅助函数
+                    async function waitForLoading() {{
+                        const maxWait = 10; // 最多等待 10 秒
+                        for (let i = 0; i < maxWait; i++) {{
+                            // 检测常见的加载指示器
+                            const loaders = document.querySelectorAll([
+                                '[data-test="loader"]',
+                                '[class*="loading"]',
+                                '[class*="spinner"]',
+                                '[aria-busy="true"]',
+                                '.loading',
+                                '.spinner'
+                            ].join(','));
+
+                            const isLoading = Array.from(loaders).some(el => {{
+                                const style = window.getComputedStyle(el);
+                                return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                            }});
+
+                            if (!isLoading) {{
+                                console.log('[Scroll] Loading indicator disappeared');
+                                return true;
+                            }}
+
+                            await new Promise(r => setTimeout(r, 1000));
+                        }}
+                        console.log('[Scroll] Loading wait timeout');
+                        return false;
+                    }}
+
+                    // 获取当前页面元素数量（用于检测新内容）
+                    function getItemCount() {{
+                        // 尝试多种选择器来检测内容项
+                        const selectors = [
+                            'figure',
+                            '[data-test*="photo"]',
+                            'img[src*="unsplash"]',
+                            'a[href*="/photos/"]',
+                            'article',
+                            '[class*="photo"]',
+                            '[class*="image"]'
+                        ];
+
+                        let maxCount = 0;
+                        for (const selector of selectors) {{
+                            const count = document.querySelectorAll(selector).length;
+                            if (count > maxCount) maxCount = count;
+                        }}
+                        return maxCount;
+                    }}
+
+                    // 平滑滚动函数
+                    async function smoothScrollToBottom() {{
+                        const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+                        const targetScroll = document.body.scrollHeight - window.innerHeight;
+                        const distance = targetScroll - currentScroll;
+
+                        // 分步滚动，更接近真实用户行为
+                        const steps = 5;
+                        const stepSize = distance / steps;
+
+                        for (let i = 0; i < steps; i++) {{
+                            window.scrollBy(0, stepSize);
+                            await new Promise(r => setTimeout(r, 100));
+                        }}
+                    }}
+
+                    // 主滚动循环
+                    for (let i = 0; i < {max_scrolls}; i++) {{
+                        scrollCount++;
+                        console.log(`[Scroll] Round ${{scrollCount}}/${{max_scrolls}}`);
+
+                        // 平滑滚动到底部
+                        await smoothScrollToBottom();
+
+                        // 强制加载懒加载图片
+                        document.querySelectorAll('img[loading="lazy"]').forEach(img => {{
+                            img.loading = 'eager';
+                            // 触发 Intersection Observer
+                            img.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
+                        }});
+
+                        // 触发任何可能的 Intersection Observer
+                        const images = document.querySelectorAll('img[data-src], img[data-srcset]');
+                        images.forEach(img => {{
+                            if (img.dataset.src && !img.src) img.src = img.dataset.src;
+                            if (img.dataset.srcset && !img.srcset) img.srcset = img.dataset.srcset;
+                        }});
+
+                        // 等待内容加载
+                        console.log(`[Scroll] Waiting {scroll_delay}ms for content...`);
+                        await new Promise(r => setTimeout(r, {scroll_delay}));
+
+                        // 等待加载指示器消失
+                        await waitForLoading();
+
+                        // 多维度检测变化
+                        const newHeight = document.body.scrollHeight;
+                        const newItemCount = getItemCount();
+
+                        console.log(`[Scroll] Height: ${{lastHeight}} -> ${{newHeight}}, Items: ${{lastItemCount}} -> ${{newItemCount}}`);
+
+                        // 检查是否有新内容
+                        const heightChanged = newHeight > lastHeight;
+                        const itemsChanged = newItemCount > lastItemCount;
+
+                        if (!heightChanged && !itemsChanged) {{
+                            stableCount++;
+                            console.log(`[Scroll] No change detected (${{stableCount}}/{stable_checks})`);
+
+                            // 尝试额外的滚动技巧
+                            if (stableCount === 1) {{
+                                console.log('[Scroll] Trying alternative scroll methods...');
+                                // 稍微向上滚动再向下，可能触发观察器
+                                window.scrollBy(0, -200);
+                                await new Promise(r => setTimeout(r, 500));
+                                window.scrollBy(0, 200);
+                                await new Promise(r => setTimeout(r, {scroll_delay}));
+
+                                const retryHeight = document.body.scrollHeight;
+                                const retryItems = getItemCount();
+
+                                if (retryHeight > newHeight || retryItems > newItemCount) {{
+                                    console.log('[Scroll] Alternative method worked!');
+                                    lastHeight = retryHeight;
+                                    lastItemCount = retryItems;
+                                    stableCount = 0;
+                                    continue;
+                                }}
+                            }}
+
+                            if (stableCount >= {stable_checks}) {{
+                                console.log('[Scroll] Content stable, ending scroll');
+                                break;
+                            }}
+                        }} else {{
+                            console.log('[Scroll] New content detected, continuing...');
+                            stableCount = 0;
+                            lastHeight = newHeight;
+                            lastItemCount = newItemCount;
+                        }}
+                    }}
+
+                    // 滚动回顶部
+                    console.log('[Scroll] Scrolling back to top...');
+                    window.scrollTo({{ top: 0, behavior: 'smooth' }});
+                    await new Promise(r => setTimeout(r, 1000));
+
+                    const finalItems = getItemCount();
+                    console.log(`[Scroll] Complete! Total scrolls: ${{scrollCount}}, Final items: ${{finalItems}}`);
+                }}
+
+                await autoScrollEnhanced();
             """)
         
         # 🔥 修复：使用新的 cache_mode 参数
