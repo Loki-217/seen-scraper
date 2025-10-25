@@ -39,11 +39,14 @@ def _crawl_with_crawler_runner(url: str, config: Optional[Dict] = None) -> str:
         'crawler_runner_v2.py'
     )
 
-    # 默认配置
+    # 默认配置（针对瀑布流网站优化）
     if config is None:
         config = {
             "auto_scroll": True,
-            "use_stealth": False,
+            "use_stealth": True,        # 🔥 启用隐身模式
+            "max_scrolls": 30,          # 🔥 增加滚动次数
+            "scroll_delay": 3000,       # 🔥 增加等待时间（毫秒）
+            "stable_checks": 5,         # 🔥 增加稳定性检查
             "wait_for": None
         }
 
