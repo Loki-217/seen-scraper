@@ -15,6 +15,8 @@ class RenderRequest(BaseModel):
     url: str
     timeout_ms: int = 30000
     wait_for: Optional[str] = None
+    enhanced_scroll: bool = False  # 是否启用增强滚动
+    max_scroll_attempts: int = 5   # 最大滚动次数
 
 class SmartClickRequest(BaseModel):
     url: str
@@ -93,7 +95,7 @@ if sys.platform == 'win32':
 
 from playwright.sync_api import sync_playwright
 
-def render_page(url, timeout_ms, wait_for, inject_js):
+def render_page(url, timeout_ms, wait_for, inject_js, enhanced_scroll=False, max_scroll_attempts=5):
     try:
         with sync_playwright() as p:
             # 🔥 反反爬虫配置
@@ -163,27 +165,32 @@ def render_page(url, timeout_ms, wait_for, inject_js):
                 page.wait_for_timeout(2000)
                 print("[Render] Page loaded", file=sys.stderr)
                 
-                # 🔥 自动滚动预加载
-                try:
-                    initial_h = page.evaluate("document.body.scrollHeight")
-                    print(f"[Scroll] Start: {initial_h}px", file=sys.stderr)
-                    
-                    for i in range(5):
-                        page.evaluate("window.scrollTo(0, 999999); window.scrollBy(0, 9999);")
-                        page.wait_for_timeout(1200)
-                        page.evaluate('document.querySelectorAll("img[loading]").forEach(i=>i.loading="eager");')
-                        
-                        new_h = page.evaluate("document.body.scrollHeight")
-                        print(f"[Scroll] #{i+1}: {new_h}px", file=sys.stderr)
-                        if new_h == initial_h:
-                            break
-                        initial_h = new_h
-                    
-                    page.evaluate("window.scrollTo(0, 0)")
-                    page.wait_for_timeout(300)
-                    print("[Scroll] Complete", file=sys.stderr)
-                except Exception as e:
-                    print(f"[Scroll] Error: {e}", file=sys.stderr)
+                # 🔥 自动滚动预加载（根据参数决定是否启用和滚动次数）
+                if enhanced_scroll:
+                    try:
+                        initial_h = page.evaluate("document.body.scrollHeight")
+                        print(f"[Scroll] Enhanced scrolling enabled, max attempts: {max_scroll_attempts}", file=sys.stderr)
+                        print(f"[Scroll] Start: {initial_h}px", file=sys.stderr)
+
+                        for i in range(max_scroll_attempts):
+                            page.evaluate("window.scrollTo(0, 999999); window.scrollBy(0, 9999);")
+                            page.wait_for_timeout(1500)  # 增加等待时间，让内容有时间加载
+                            page.evaluate('document.querySelectorAll("img[loading]").forEach(i=>i.loading="eager");')
+
+                            new_h = page.evaluate("document.body.scrollHeight")
+                            print(f"[Scroll] #{i+1}/{max_scroll_attempts}: {new_h}px", file=sys.stderr)
+                            if new_h == initial_h:
+                                print(f"[Scroll] No more content after {i+1} scrolls", file=sys.stderr)
+                                break
+                            initial_h = new_h
+
+                        page.evaluate("window.scrollTo(0, 0)")
+                        page.wait_for_timeout(300)
+                        print("[Scroll] Complete", file=sys.stderr)
+                    except Exception as e:
+                        print(f"[Scroll] Error: {e}", file=sys.stderr)
+                else:
+                    print("[Scroll] Enhanced scrolling disabled", file=sys.stderr)
                 
             except Exception as e:
                 error_msg = str(e)
@@ -297,10 +304,12 @@ footer img {
 if __name__ == "__main__":
     params = json.loads(sys.argv[1])
     result = render_page(
-        params["url"], 
-        params["timeout_ms"], 
+        params["url"],
+        params["timeout_ms"],
         params.get("wait_for"),
-        params["inject_js"]
+        params["inject_js"],
+        params.get("enhanced_scroll", False),
+        params.get("max_scroll_attempts", 5)
     )
     # 🔥 确保使用ASCII编码输出，避免Windows编码问题
     output = json.dumps(result, ensure_ascii=True)
@@ -329,7 +338,9 @@ async def render_page(req: RenderRequest):
             "url": req.url,
             "timeout_ms": req.timeout_ms,
             "wait_for": req.wait_for,
-            "inject_js": INJECTED_SCRIPT
+            "inject_js": INJECTED_SCRIPT,
+            "enhanced_scroll": req.enhanced_scroll,
+            "max_scroll_attempts": req.max_scroll_attempts
         }
         
         params_json = json.dumps(params, ensure_ascii=True)
