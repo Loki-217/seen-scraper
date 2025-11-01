@@ -8,6 +8,8 @@ import json
 import sys
 import tempfile
 import os
+import httpx
+import base64
 
 router = APIRouter(prefix="/api/proxy", tags=["proxy"])
 
@@ -19,6 +21,22 @@ class RenderRequest(BaseModel):
 class SmartClickRequest(BaseModel):
     url: str
     element: Dict[str, Any]
+
+class ForwardRequest(BaseModel):
+    """Service Worker 转发请求"""
+    url: str
+    method: str = "GET"
+    headers: Dict[str, str] = {}
+    body: Optional[str] = None
+
+class ForwardResponse(BaseModel):
+    """Service Worker 转发响应"""
+    success: bool
+    status: int = 200
+    headers: Dict[str, str] = {}
+    body: Optional[str] = None
+    body_base64: Optional[str] = None
+    error: Optional[str] = None
 
 # 简化的注入脚本
 INJECTED_SCRIPT = r"""
@@ -442,3 +460,160 @@ async def render_page(req: RenderRequest):
 @router.get("/test")
 async def test_proxy():
     return {"status": "ok"}
+
+@router.post("/forward", response_model=ForwardResponse)
+async def forward_request(req: ForwardRequest):
+    """
+    转发跨域请求到目标服务器
+
+    用于 Service Worker 绕过浏览器 CORS 限制
+
+    请求体：
+    - url: 目标 URL
+    - method: HTTP 方法（GET/POST/PUT/DELETE 等）
+    - headers: 请求头字典
+    - body: 请求体（可选，用于 POST/PUT 等）
+
+    响应体：
+    - success: 是否成功
+    - status: HTTP 状态码
+    - headers: 响应头字典
+    - body: 文本响应内容（HTML/JSON/CSS/JS 等）
+    - body_base64: 二进制响应内容（图片/字体等，base64 编码）
+    - error: 错误信息（如果失败）
+    """
+
+    print(f"[Proxy/Forward] 接收请求: {req.method} {req.url}")
+
+    try:
+        # 使用 httpx 发送异步 HTTP 请求
+        async with httpx.AsyncClient(
+            timeout=30.0,
+            follow_redirects=True,
+            verify=False  # 忽略 SSL 证书验证（如果需要）
+        ) as client:
+
+            # 准备请求头
+            headers = dict(req.headers)
+
+            # 移除可能导致问题的请求头
+            headers_to_remove = [
+                'host', 'connection', 'content-length',
+                'transfer-encoding', 'accept-encoding'
+            ]
+            for h in headers_to_remove:
+                headers.pop(h, None)
+                headers.pop(h.capitalize(), None)
+                headers.pop(h.upper(), None)
+
+            # 确保有 User-Agent
+            if 'user-agent' not in [k.lower() for k in headers.keys()]:
+                headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+            print(f"[Proxy/Forward] 发送请求到: {req.url}")
+            print(f"[Proxy/Forward] 方法: {req.method}")
+            print(f"[Proxy/Forward] 请求头: {list(headers.keys())}")
+
+            # 发送请求
+            response = await client.request(
+                method=req.method,
+                url=req.url,
+                headers=headers,
+                content=req.body.encode('utf-8') if req.body else None
+            )
+
+            print(f"[Proxy/Forward] 响应状态: {response.status_code}")
+            print(f"[Proxy/Forward] 响应头: {list(response.headers.keys())}")
+
+            # 转换响应头为字典（移除敏感头）
+            response_headers = {}
+            skip_headers = [
+                'transfer-encoding', 'content-encoding', 'connection',
+                'keep-alive', 'upgrade', 'strict-transport-security'
+            ]
+            for key, value in response.headers.items():
+                if key.lower() not in skip_headers:
+                    response_headers[key.lower()] = value
+
+            # 判断是否为二进制内容
+            content_type = response.headers.get('content-type', '').lower()
+            is_binary = any([
+                content_type.startswith('image/'),
+                content_type.startswith('font/'),
+                content_type.startswith('audio/'),
+                content_type.startswith('video/'),
+                'octet-stream' in content_type,
+                content_type.startswith('application/pdf'),
+                content_type.startswith('application/zip')
+            ])
+
+            if is_binary:
+                # 二进制内容：返回 base64 编码
+                body_bytes = response.content
+                body_base64 = base64.b64encode(body_bytes).decode('ascii')
+
+                print(f"[Proxy/Forward] 二进制内容，大小: {len(body_bytes)} bytes")
+
+                return ForwardResponse(
+                    success=True,
+                    status=response.status_code,
+                    headers=response_headers,
+                    body=None,
+                    body_base64=body_base64
+                )
+            else:
+                # 文本内容：直接返回
+                try:
+                    body_text = response.text
+                    print(f"[Proxy/Forward] 文本内容，大小: {len(body_text)} chars")
+
+                    return ForwardResponse(
+                        success=True,
+                        status=response.status_code,
+                        headers=response_headers,
+                        body=body_text,
+                        body_base64=None
+                    )
+                except Exception as e:
+                    # 如果解码失败，尝试作为二进制处理
+                    print(f"[Proxy/Forward] 文本解码失败，作为二进制处理: {e}")
+                    body_bytes = response.content
+                    body_base64 = base64.b64encode(body_bytes).decode('ascii')
+
+                    return ForwardResponse(
+                        success=True,
+                        status=response.status_code,
+                        headers=response_headers,
+                        body=None,
+                        body_base64=body_base64
+                    )
+
+    except httpx.RequestError as e:
+        print(f"[Proxy/Forward] 请求错误: {e}")
+        return ForwardResponse(
+            success=False,
+            status=502,
+            headers={},
+            error=f"请求失败: {str(e)}"
+        )
+
+    except httpx.HTTPStatusError as e:
+        print(f"[Proxy/Forward] HTTP 错误: {e}")
+        return ForwardResponse(
+            success=False,
+            status=e.response.status_code,
+            headers={},
+            error=f"HTTP 错误 {e.response.status_code}: {str(e)}"
+        )
+
+    except Exception as e:
+        print(f"[Proxy/Forward] 未知错误: {e}")
+        import traceback
+        traceback.print_exc()
+
+        return ForwardResponse(
+            success=False,
+            status=500,
+            headers={},
+            error=f"服务器错误: {str(e)}"
+        )
