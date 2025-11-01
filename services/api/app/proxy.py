@@ -39,63 +39,124 @@ class ForwardResponse(BaseModel):
     error: Optional[str] = None
 
 # 简化的注入脚本
+# 功能：拦截点击事件，阻止默认行为，发送元素信息到父窗口
+# 网络请求由 Service Worker 代理，不需要在这里拦截
 INJECTED_SCRIPT = r"""
 (function() {
-    if (window.__scraperInjected) return;
+    // 避免重复注入
+    if (window.__scraperInjected) {
+        console.log('[Iframe] Script already injected, skipping');
+        return;
+    }
     window.__scraperInjected = true;
-    
-    console.log('[SeenFetch] Script injected!');
-    
+
+    console.log('[Iframe] Interaction script injected successfully');
+
+    // 添加悬停高亮样式
     var style = document.createElement('style');
-    style.innerHTML = '.scraper-hover { outline: 2px solid #4CAF50 !important; outline-offset: 2px; }';
+    style.innerHTML = `
+        .scraper-hover {
+            outline: 2px solid #4CAF50 !important;
+            outline-offset: 2px;
+            cursor: pointer !important;
+        }
+        .scraper-selected {
+            outline: 3px solid #2196F3 !important;
+            outline-offset: 2px;
+            background: rgba(33, 150, 243, 0.1) !important;
+        }
+    `;
     document.head.appendChild(style);
 
+    // 点击事件处理：拦截所有点击，阻止默认行为
     document.addEventListener('click', function(e) {
+        // 阻止默认行为（跳转、表单提交等）
         e.preventDefault();
         e.stopPropagation();
-        
-        console.log('[SeenFetch] Element clicked:', e.target);
-        
+
+        console.log('[Iframe] Element clicked:', e.target);
+
         var element = e.target;
+
+        // 生成选择器
         var selector = element.tagName.toLowerCase();
-        
+
         if (element.id) {
             selector = '#' + element.id;
         } else if (element.className && typeof element.className === 'string') {
-            var classes = element.className.split(' ').filter(function(c) { return c && !c.match(/^scraper-/); });
+            var classes = element.className.split(' ').filter(function(c) {
+                return c && !c.match(/^scraper-/);
+            });
             if (classes.length > 0) {
                 selector = element.tagName.toLowerCase() + '.' + classes[0];
             }
         }
-        
+
+        // 提取元素信息
         var elementInfo = {
             tagName: element.tagName.toLowerCase(),
             className: element.className,
             id: element.id,
-            text: (element.innerText || element.textContent || '').substring(0, 100),
+            text: (element.innerText || element.textContent || '').substring(0, 100).trim(),
             selector: selector,
             href: element.href || '',
-            src: element.src || ''
+            src: element.src || '',
+            type: element.type || '',
+            name: element.name || '',
+            value: element.value || ''
         };
-        
-        console.log('[SeenFetch] Posting message:', elementInfo);
-        
-       window.parent.postMessage({
-           type: 'element-clicked',
-           element: elementInfo,
-           selector: selector
+
+        console.log('[Iframe] Sending element info to parent:', elementInfo);
+
+        // 发送消息到父窗口
+        window.parent.postMessage({
+            type: 'element-clicked',
+            element: elementInfo,
+            selector: selector
         }, '*');
-        
+
+        // 标记为已选中
+        element.classList.add('scraper-selected');
+
         return false;
-    }, true);
-    
+    }, true);  // 使用捕获阶段，优先拦截
+
+    // 鼠标悬停：添加高亮效果
     document.addEventListener('mouseover', function(e) {
-        e.target.classList.add('scraper-hover');
+        if (!e.target.classList.contains('scraper-selected')) {
+            e.target.classList.add('scraper-hover');
+        }
     }, true);
-    
+
+    // 鼠标移出：移除高亮效果
     document.addEventListener('mouseout', function(e) {
         e.target.classList.remove('scraper-hover');
     }, true);
+
+    // 监听来自父窗口的消息（用于高亮控制等）
+    window.addEventListener('message', function(e) {
+        if (e.data.type === 'highlight-element') {
+            console.log('[Iframe] Received highlight command:', e.data.selector);
+
+            try {
+                var elements = document.querySelectorAll(e.data.selector);
+                elements.forEach(function(el) {
+                    el.classList.add('scraper-selected');
+                });
+            } catch (err) {
+                console.error('[Iframe] Failed to highlight element:', err);
+            }
+        } else if (e.data.type === 'clear-highlights') {
+            console.log('[Iframe] Clearing all highlights');
+
+            var selected = document.querySelectorAll('.scraper-selected');
+            selected.forEach(function(el) {
+                el.classList.remove('scraper-selected');
+            });
+        }
+    });
+
+    console.log('[Iframe] Event listeners registered');
 })();
 """
 

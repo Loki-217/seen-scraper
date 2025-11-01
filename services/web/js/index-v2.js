@@ -116,37 +116,79 @@ async function loadPage() {
 
 // ==================== 手动模式 ====================
 
+/**
+ * 加载手动模式页面
+ * 简化版：直接从后端获取 HTML，创建 Blob URL 并加载到 iframe
+ * Service Worker 会自动代理所有跨域请求，无需注入复杂的拦截器
+ */
 async function loadManualMode(url) {
     const loading = document.getElementById('loadingOverlay');
+    const iframe = document.getElementById('previewFrame');
+
     loading.classList.remove('hidden');
-    
+
+    console.log('[Main] Loading page in manual mode:', url);
+
     try {
+        // 1. 调用后端获取 HTML（后端会注入交互脚本）
+        console.log('[Main] Fetching HTML from backend...');
         const response = await fetch(`${API_BASE}/api/proxy/render`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url, timeout_ms: 30000 })
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json();
-            
-            if (errorData.detail?.error?.includes('blocked') || 
+
+            if (errorData.detail?.error?.includes('blocked') ||
                 errorData.detail?.error?.includes('anti-bot') ||
                 errorData.detail?.details?.includes('anti-scraping')) {
                 showAntiScrapingModal(url);
                 return;
             }
-            
+
             throw new Error(errorData.detail?.error || 'Request failed');
         }
-        
+
         const data = await response.json();
-        document.getElementById('previewFrame').srcdoc = data.html;
-        
+        console.log('[Main] HTML received, length:', data.html?.length, 'chars');
+
+        // 2. 创建 Blob URL（优先使用 Blob，降级到 srcdoc）
+        try {
+            console.log('[Main] Creating Blob URL...');
+            const blob = new Blob([data.html], { type: 'text/html; charset=utf-8' });
+            const blobUrl = URL.createObjectURL(blob);
+
+            // 释放之前的 Blob URL
+            if (iframe.dataset.blobUrl) {
+                URL.revokeObjectURL(iframe.dataset.blobUrl);
+            }
+
+            // 3. 设置 iframe.src
+            iframe.src = blobUrl;
+            iframe.dataset.blobUrl = blobUrl;
+
+            console.log('[Main] Blob URL created and set to iframe');
+
+            // 监听 iframe 加载完成
+            iframe.onload = () => {
+                console.log('[Main] Iframe loaded successfully');
+                console.log('[Main] Service Worker will handle all network requests from now on');
+            };
+
+        } catch (error) {
+            // 降级：使用 srcdoc
+            console.warn('[Main] Blob URL creation failed, falling back to srcdoc:', error);
+            iframe.srcdoc = data.html;
+        }
+
     } catch (error) {
+        console.error('[Main] Failed to load page:', error);
+
         const errorMsg = error.message.toLowerCase();
-        if (errorMsg.includes('blocked') || 
-            errorMsg.includes('connection') || 
+        if (errorMsg.includes('blocked') ||
+            errorMsg.includes('connection') ||
             errorMsg.includes('failed')) {
             showAntiScrapingModal(url);
         } else {
@@ -1385,12 +1427,132 @@ function suggestFieldNameLocal(element) {
     return `字段${configuredFields.length + 1}`;
 }
 
+// ==================== Iframe 消息监听 ====================
+
+/**
+ * 监听来自 iframe 的 postMessage
+ * 处理用户在预览区域的点击事件
+ */
+window.addEventListener('message', (event) => {
+    // 安全检查：确保消息来自我们的 iframe
+    // 注意：由于使用 Blob URL，origin 会是 null 或 blob:
+    // 所以这里主要检查消息格式
+
+    console.log('[Main] Received message from iframe:', event.data);
+
+    // 处理元素点击事件
+    if (event.data && event.data.type === 'element-clicked') {
+        handleElementClicked(event.data);
+    }
+});
+
+/**
+ * 处理元素点击事件
+ * @param {Object} data - 包含 element 和 selector 信息的对象
+ */
+function handleElementClicked(data) {
+    const { element, selector } = data;
+
+    console.log('[Main] Element clicked in iframe:', {
+        selector: selector,
+        tagName: element.tagName,
+        text: element.text,
+        className: element.className
+    });
+
+    // 1. 检查是否已经选择过这个元素
+    const existingField = configuredFields.find(f => f.selector === selector);
+    if (existingField) {
+        console.log('[Main] Element already selected, skipping');
+        showToast('⚠️ 该元素已选择', 'warning');
+        return;
+    }
+
+    // 2. 自动生成字段名
+    const fieldName = guessFieldName(element);
+
+    // 3. 添加到配置字段列表
+    const newField = {
+        name: fieldName,
+        selector: selector,
+        attr: element.tagName === 'img' ? 'src' :
+              element.tagName === 'a' ? 'href' : 'text',
+        preview: element.text || element.href || element.src || ''
+    };
+
+    configuredFields.push(newField);
+
+    console.log('[Main] Field added:', newField);
+
+    // 4. 更新 UI
+    renderFieldsList();
+
+    // 5. 发送高亮指令到 iframe
+    highlightElementInIframe(selector);
+
+    // 6. 显示提示
+    showToast(`✅ 已添加字段: ${fieldName}`, 'success');
+
+    // 7. 如果配置弹窗未打开，自动打开
+    const configModal = document.getElementById('configModal');
+    if (!configModal.classList.contains('active')) {
+        toggleConfigModal();
+    }
+}
+
+/**
+ * 在 iframe 中高亮显示元素
+ * @param {string} selector - CSS 选择器
+ */
+function highlightElementInIframe(selector) {
+    const iframe = document.getElementById('previewFrame');
+    if (!iframe || !iframe.contentWindow) {
+        console.warn('[Main] Cannot access iframe contentWindow');
+        return;
+    }
+
+    try {
+        iframe.contentWindow.postMessage({
+            type: 'highlight-element',
+            selector: selector
+        }, '*');
+
+        console.log('[Main] Highlight command sent to iframe:', selector);
+    } catch (error) {
+        console.error('[Main] Failed to send highlight command:', error);
+    }
+}
+
+/**
+ * 清除 iframe 中的所有高亮
+ */
+function clearHighlightsInIframe() {
+    const iframe = document.getElementById('previewFrame');
+    if (!iframe || !iframe.contentWindow) {
+        return;
+    }
+
+    try {
+        iframe.contentWindow.postMessage({
+            type: 'clear-highlights'
+        }, '*');
+
+        console.log('[Main] Clear highlights command sent to iframe');
+    } catch (error) {
+        console.error('[Main] Failed to clear highlights:', error);
+    }
+}
+
 // ==================== 初始化 ====================
 
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('[Main] Page initialized');
+
     document.getElementById('urlInput').focus();
     document.getElementById('urlInput').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') loadPage();
     });
+
+    console.log('[Main] Event listeners registered');
 });
 
