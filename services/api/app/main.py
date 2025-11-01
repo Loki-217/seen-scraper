@@ -8,10 +8,12 @@ if sys.platform == 'win32':
 from contextlib import asynccontextmanager
 from typing import Optional, List
 import traceback
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .settings import settings
@@ -96,7 +98,7 @@ app.include_router(ai_router)  # 添加 AI 路由
 
 
 # ---------- 品牌data端点 ----------
-@app.get("/")
+@app.get("/api")
 def root():
     return {
         "name": "SeenFetch",
@@ -220,6 +222,23 @@ async def smart_analyze(req: SmartAnalyzeRequest):  # 🔥 注意：参数是 re
         traceback.print_exc()
         return {"success": False, "error": str(e), "suggestions": []}
 
+
+# ---------- 静态文件服务 ----------
+# 🔥 重要：必须放在所有 API 路由之后！
+# 这样 FastAPI 会优先匹配 API 路由，匹配不到的才会去静态文件目录
+# 路径说明：
+# - __file__ = .../services/api/app/main.py
+# - .parent.parent.parent = .../services
+# - / "web" = .../services/web
+WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
+
+if WEB_DIR.exists():
+    print(f"[Static] Mounting static files from: {WEB_DIR}")
+    app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="static")
+else:
+    print(f"[Static] Warning: Web directory not found: {WEB_DIR}")
+    print(f"[Static] Attempted path: {WEB_DIR}")
+    print("[Static] Static files will not be available")
 
 
 if __name__ == "__main__":
