@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/proxy", tags=["proxy"])
 
 class RenderRequest(BaseModel):
     url: str
-    timeout_ms: int = 30000
+    timeout_ms: int = 60000  # 增加到60秒，支持客户端渲染网站
     wait_for: Optional[str] = None
 
 class SmartClickRequest(BaseModel):
@@ -38,62 +38,102 @@ class ForwardResponse(BaseModel):
     body_base64: Optional[str] = None
     error: Optional[str] = None
 
-# 🔥 反 iframe 跳出脚本
+# 🔥 反 iframe 跳出脚本（增强版）
 # 功能：防止页面检测到在 iframe 中并跳出（如豆瓣等网站）
 # 优先级：最高，必须在所有其他脚本之前注入
 ANTI_IFRAME_BREAKOUT_SCRIPT = r"""
 (function() {
-    console.log('[Iframe-Protection] Anti-breakout script loaded');
+    console.log('[Iframe-Protection] 🛡️ Anti-breakout script loaded');
 
     try {
         // 1. 冻结 top 对象，使其等于 window.self
         Object.defineProperty(window, 'top', {
             get: function() { return window.self; },
-            set: function() { console.warn('[Iframe-Protection] Blocked attempt to modify window.top'); },
+            set: function() { console.warn('[Iframe-Protection] ⚠️ Blocked attempt to modify window.top'); },
             configurable: false
         });
 
         // 2. 冻结 parent 对象（部分网站会用 parent 跳出）
         Object.defineProperty(window, 'parent', {
             get: function() { return window.self; },
-            set: function() { console.warn('[Iframe-Protection] Blocked attempt to modify window.parent'); },
+            set: function() { console.warn('[Iframe-Protection] ⚠️ Blocked attempt to modify window.parent'); },
             configurable: false
         });
 
-        // 3. 阻止 location 跳转
-        var originalLocation = window.location;
-        Object.defineProperty(window, 'location', {
-            get: function() { return originalLocation; },
-            set: function(val) {
-                console.warn('[Iframe-Protection] Blocked location redirect to:', val);
-                // 允许在当前 iframe 内跳转，但阻止跳出
-                if (typeof val === 'string' && !val.includes('javascript:')) {
-                    originalLocation.href = val;
-                }
-            }
-        });
-
-        // 4. 拦截常见的 iframe 检测代码
-        try {
-            if (window.top !== window.self) {
-                // 这行代码永远不会执行（因为我们已经重写了 top）
-                // 但某些网站会在源代码层面检查，所以我们捕获这个异常
-            }
-        } catch(e) {
-            console.log('[Iframe-Protection] Caught iframe detection attempt');
-        }
-
-        // 5. 拦截 frameElement 访问
+        // 3. 拦截 frameElement 访问
         Object.defineProperty(window, 'frameElement', {
             get: function() { return null; },  // 返回 null 表示不在 iframe 中
             set: function() {},
             configurable: false
         });
 
-        console.log('[Iframe-Protection] All protections applied successfully');
+        // 4. 🔥 拦截 location 的所有修改方式
+        var originalLocation = window.location;
+        var locationProxy = new Proxy(originalLocation, {
+            get: function(target, prop) {
+                return target[prop];
+            },
+            set: function(target, prop, value) {
+                console.warn('[Iframe-Protection] ⚠️ Blocked location.' + prop + ' modification to:', value);
+                // 只允许在同一个iframe内跳转
+                if (prop === 'href' && typeof value === 'string' && value.startsWith(window.location.origin)) {
+                    target[prop] = value;
+                    return true;
+                }
+                return false;
+            }
+        });
+
+        // 5. 🔥 拦截 top.location 访问（豆瓣常用技术）
+        try {
+            if (window.top && window.top.location) {
+                Object.defineProperty(window.top, 'location', {
+                    get: function() { return window.self.location; },
+                    set: function(val) {
+                        console.warn('[Iframe-Protection] ⚠️ Blocked top.location redirect to:', val);
+                        return false;
+                    },
+                    configurable: false
+                });
+            }
+        } catch(e) {
+            // 跨域访问会抛出异常，这是正常的
+        }
+
+        // 6. 🔥 拦截常见的跳出函数调用
+        var originalOpen = window.open;
+        window.open = function() {
+            console.warn('[Iframe-Protection] ⚠️ Blocked window.open() call');
+            return null;
+        };
+
+        // 7. 🔥 拦截 document.write 和 document.writeln（可能用于重写整个页面）
+        var originalWrite = document.write;
+        var originalWriteln = document.writeln;
+        var writeBlocked = false;
+
+        document.write = function(content) {
+            if (!writeBlocked && content && content.includes('<html')) {
+                console.warn('[Iframe-Protection] ⚠️ Blocked document.write() - attempting to rewrite page');
+                writeBlocked = true;
+                return;
+            }
+            return originalWrite.apply(this, arguments);
+        };
+
+        document.writeln = function(content) {
+            if (!writeBlocked && content && content.includes('<html')) {
+                console.warn('[Iframe-Protection] ⚠️ Blocked document.writeln() - attempting to rewrite page');
+                writeBlocked = true;
+                return;
+            }
+            return originalWriteln.apply(this, arguments);
+        };
+
+        console.log('[Iframe-Protection] ✅ All protections applied successfully');
 
     } catch(e) {
-        console.error('[Iframe-Protection] Failed to apply protections:', e);
+        console.error('[Iframe-Protection] ❌ Failed to apply protections:', e);
     }
 })();
 """
@@ -232,7 +272,7 @@ if sys.platform == 'win32':
 
 from playwright.sync_api import sync_playwright
 
-def render_page(url, timeout_ms, wait_for, inject_js):
+def render_page(url, timeout_ms, wait_for, inject_js, anti_iframe_script):
     try:
         with sync_playwright() as p:
             # 🔥 反反爬虫配置
@@ -260,7 +300,7 @@ def render_page(url, timeout_ms, wait_for, inject_js):
 
             # 🔥 最高优先级：注入反 iframe 跳出脚本
             # 必须在页面加载之前就执行，防止豆瓣等网站跳出 iframe
-            page.add_init_script(params["anti_iframe_script"])
+            page.add_init_script(anti_iframe_script)
             print("[Inject] Anti-iframe breakout script added", file=sys.stderr)
 
             # 🔥 隐藏webdriver特征 + 反反调试
@@ -303,8 +343,21 @@ def render_page(url, timeout_ms, wait_for, inject_js):
             
             # 🔥 导航到页面
             try:
-                page.goto(url, wait_until="load", timeout=timeout_ms)
-                page.wait_for_timeout(2000)
+                # 🔥 特殊处理：为客户端渲染的网站（如Unsplash）等待网络空闲
+                if 'unsplash.com' in url.lower():
+                    print("[Render] Detected Unsplash - using networkidle wait", file=sys.stderr)
+                    page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+                    page.wait_for_timeout(5000)  # 额外等待5秒让React渲染完成
+                    # 等待主要内容区域加载
+                    try:
+                        page.wait_for_selector('img', timeout=10000)
+                        print("[Render] Unsplash images detected", file=sys.stderr)
+                    except:
+                        print("[Render] Warning: Unsplash images not detected", file=sys.stderr)
+                else:
+                    page.goto(url, wait_until="load", timeout=timeout_ms)
+                    page.wait_for_timeout(2000)
+
                 print("[Render] Page loaded", file=sys.stderr)
                 
                 # 🔥 自动滚动预加载
@@ -355,7 +408,17 @@ def render_page(url, timeout_ms, wait_for, inject_js):
             
             content = page.content()
             title = page.title()
-            
+
+            # 🔥 检查页面内容是否为空
+            if not content or len(content) < 100:
+                print(f"[Render] Warning: Page content is empty or too short ({len(content)} bytes)", file=sys.stderr)
+                # 对于Unsplash等网站，再尝试一次
+                if 'unsplash.com' in url.lower():
+                    print("[Render] Retrying Unsplash content fetch...", file=sys.stderr)
+                    page.wait_for_timeout(5000)
+                    content = page.content()
+                    print(f"[Render] Retry result: {len(content)} bytes", file=sys.stderr)
+
             # 🔥 修复资源路径、图标库 + 强制显示隐藏元素
             from urllib.parse import urlparse
             parsed = urlparse(page.url)
@@ -441,10 +504,11 @@ footer img {
 if __name__ == "__main__":
     params = json.loads(sys.argv[1])
     result = render_page(
-        params["url"], 
-        params["timeout_ms"], 
+        params["url"],
+        params["timeout_ms"],
         params.get("wait_for"),
-        params["inject_js"]
+        params["inject_js"],
+        params["anti_iframe_script"]
     )
     # 🔥 确保使用ASCII编码输出，避免Windows编码问题
     output = json.dumps(result, ensure_ascii=True)
