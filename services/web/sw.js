@@ -39,12 +39,48 @@
 
 const PROXY_API_URL = 'http://localhost:8000/api/proxy/forward';
 
-// 需要代理的域名列表
+// 🔥 需要代理的域名列表（扩展版）
+// 支持精确匹配和通配符匹配
 const PROXY_DOMAINS = [
+    // Unsplash 相关域名（所有子域名）
     'unsplash.com',
     'images.unsplash.com',
-    'api.unsplash.com'
+    'api.unsplash.com',
+    'source.unsplash.com',
+    'cdn.unsplash.com',
+
+    // 豆瓣相关域名
+    'douban.com',
+    'img1.doubanio.com',
+    'img2.doubanio.com',
+    'img3.doubanio.com',
+    'img9.doubanio.com',
 ];
+
+/**
+ * 检查URL是否需要代理
+ * @param {string} url - 请求的URL
+ * @returns {boolean} - 是否需要代理
+ */
+function shouldProxy(url) {
+    try {
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname.toLowerCase();
+
+        // 遍历代理域名列表
+        for (const domain of PROXY_DOMAINS) {
+            // 精确匹配或子域名匹配
+            if (hostname === domain || hostname.endsWith('.' + domain)) {
+                return true;
+            }
+        }
+
+        return false;
+    } catch (e) {
+        console.error('[SW] Invalid URL:', url, e);
+        return false;
+    }
+}
 
 // Service Worker 安装事件
 self.addEventListener('install', (event) => {
@@ -75,15 +111,17 @@ self.addEventListener('fetch', (event) => {
 
     // 避免拦截对代理 API 的请求（防止死循环）
     if (url.pathname.startsWith('/api/proxy/')) {
-        console.log('[SW] 跳过代理 API 请求:', url.href);
+        // console.log('[SW] ⏩ 跳过代理 API 请求:', url.href);
         return; // 不拦截，直接放行
     }
 
-    // 判断是否需要代理
-    const needsProxy = PROXY_DOMAINS.some(domain => url.hostname.includes(domain));
+    // 🔥 使用新的域名匹配函数
+    const needsProxy = shouldProxy(request.url);
 
     if (needsProxy) {
-        console.log('[SW] 拦截需要代理的请求:', url.href);
+        // 记录拦截的请求（带请求类型）
+        const resourceType = getResourceType(url.pathname);
+        console.log(`[SW] 🔗 拦截代理请求 [${resourceType}]:`, url.hostname, url.pathname);
         event.respondWith(handleProxyRequest(request));
     } else {
         // 不需要代理的请求，直接放行
@@ -93,19 +131,37 @@ self.addEventListener('fetch', (event) => {
 });
 
 /**
+ * 根据URL路径判断资源类型
+ * @param {string} pathname - URL路径
+ * @returns {string} - 资源类型
+ */
+function getResourceType(pathname) {
+    const ext = pathname.split('.').pop().toLowerCase();
+    const typeMap = {
+        'html': 'HTML',
+        'css': 'CSS',
+        'js': 'JS',
+        'json': 'JSON',
+        'jpg': 'Image', 'jpeg': 'Image', 'png': 'Image', 'gif': 'Image', 'webp': 'Image', 'svg': 'Image',
+        'woff': 'Font', 'woff2': 'Font', 'ttf': 'Font', 'eot': 'Font',
+        'mp4': 'Video', 'webm': 'Video',
+        'mp3': 'Audio', 'wav': 'Audio'
+    };
+    return typeMap[ext] || 'Other';
+}
+
+/**
  * 处理需要代理的请求
  * @param {Request} request - 原始请求对象
  * @returns {Promise<Response>} - 代理后的响应
  */
 async function handleProxyRequest(request) {
+    const startTime = Date.now();
     try {
         const url = new URL(request.url);
 
-        console.log('[SW] 开始代理请求:', {
-            url: url.href,
-            method: request.method,
-            headers: Array.from(request.headers.entries())
-        });
+        // 简化日志输出
+        // console.log('[SW] 📤 代理请求:', request.method, url.hostname + url.pathname);
 
         // 转换请求头为对象格式
         const headers = {};
@@ -132,7 +188,7 @@ async function handleProxyRequest(request) {
             }
         }
 
-        console.log('[SW] 转发请求到后端:', PROXY_API_URL);
+        // console.log('[SW] 📡 转发到后端:', PROXY_API_URL);
 
         // 发送到后端代理服务器
         const proxyResponse = await fetch(PROXY_API_URL, {
@@ -165,11 +221,7 @@ async function handleProxyRequest(request) {
         // 解析后端返回的数据
         const proxyData = await proxyResponse.json();
 
-        console.log('[SW] 后端代理响应:', {
-            success: proxyData.success,
-            status: proxyData.status,
-            contentType: proxyData.headers?.['content-type']
-        });
+        // console.log('[SW] 📥 后端响应:', proxyData.success, proxyData.status);
 
         if (!proxyData.success) {
             console.error('[SW] 代理失败:', proxyData.error || '未知错误');
@@ -201,7 +253,7 @@ async function handleProxyRequest(request) {
         } else {
             // 文本数据（HTML、JSON、CSS、JS 等）
             responseBody = proxyData.body || '';
-            console.log('[SW] 文本数据，大小:', responseBody.length, 'chars');
+            // console.log('[SW] 📄 文本数据，大小:', responseBody.length, 'chars');
         }
 
         // 构造响应头
@@ -225,7 +277,8 @@ async function handleProxyRequest(request) {
             headers: responseHeaders
         });
 
-        console.log('[SW] 代理请求成功，返回响应');
+        const elapsed = Date.now() - startTime;
+        console.log(`[SW] ✅ 代理成功 [${elapsed}ms]:`, url.hostname, url.pathname.substring(0, 50));
         return response;
 
     } catch (error) {

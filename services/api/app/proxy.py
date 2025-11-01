@@ -38,6 +38,66 @@ class ForwardResponse(BaseModel):
     body_base64: Optional[str] = None
     error: Optional[str] = None
 
+# 🔥 反 iframe 跳出脚本
+# 功能：防止页面检测到在 iframe 中并跳出（如豆瓣等网站）
+# 优先级：最高，必须在所有其他脚本之前注入
+ANTI_IFRAME_BREAKOUT_SCRIPT = r"""
+(function() {
+    console.log('[Iframe-Protection] Anti-breakout script loaded');
+
+    try {
+        // 1. 冻结 top 对象，使其等于 window.self
+        Object.defineProperty(window, 'top', {
+            get: function() { return window.self; },
+            set: function() { console.warn('[Iframe-Protection] Blocked attempt to modify window.top'); },
+            configurable: false
+        });
+
+        // 2. 冻结 parent 对象（部分网站会用 parent 跳出）
+        Object.defineProperty(window, 'parent', {
+            get: function() { return window.self; },
+            set: function() { console.warn('[Iframe-Protection] Blocked attempt to modify window.parent'); },
+            configurable: false
+        });
+
+        // 3. 阻止 location 跳转
+        var originalLocation = window.location;
+        Object.defineProperty(window, 'location', {
+            get: function() { return originalLocation; },
+            set: function(val) {
+                console.warn('[Iframe-Protection] Blocked location redirect to:', val);
+                // 允许在当前 iframe 内跳转，但阻止跳出
+                if (typeof val === 'string' && !val.includes('javascript:')) {
+                    originalLocation.href = val;
+                }
+            }
+        });
+
+        // 4. 拦截常见的 iframe 检测代码
+        try {
+            if (window.top !== window.self) {
+                // 这行代码永远不会执行（因为我们已经重写了 top）
+                // 但某些网站会在源代码层面检查，所以我们捕获这个异常
+            }
+        } catch(e) {
+            console.log('[Iframe-Protection] Caught iframe detection attempt');
+        }
+
+        // 5. 拦截 frameElement 访问
+        Object.defineProperty(window, 'frameElement', {
+            get: function() { return null; },  // 返回 null 表示不在 iframe 中
+            set: function() {},
+            configurable: false
+        });
+
+        console.log('[Iframe-Protection] All protections applied successfully');
+
+    } catch(e) {
+        console.error('[Iframe-Protection] Failed to apply protections:', e);
+    }
+})();
+"""
+
 # 简化的注入脚本
 # 功能：拦截点击事件，阻止默认行为，发送元素信息到父窗口
 # 网络请求由 Service Worker 代理，不需要在这里拦截
@@ -197,13 +257,18 @@ def render_page(url, timeout_ms, wait_for, inject_js):
             )
             
             page = context.new_page()
-            
+
+            # 🔥 最高优先级：注入反 iframe 跳出脚本
+            # 必须在页面加载之前就执行，防止豆瓣等网站跳出 iframe
+            page.add_init_script(params["anti_iframe_script"])
+            print("[Inject] Anti-iframe breakout script added", file=sys.stderr)
+
             # 🔥 隐藏webdriver特征 + 反反调试
             page.add_init_script('''
                 // 隐藏 webdriver
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
                 window.chrome = {runtime: {}};
-                
+
                 // 🔥 反反调试：禁用开发者工具检测
                 (function() {
                     // 1. 阻止检测窗口尺寸变化
@@ -408,7 +473,8 @@ async def render_page(req: RenderRequest):
             "url": req.url,
             "timeout_ms": req.timeout_ms,
             "wait_for": req.wait_for,
-            "inject_js": INJECTED_SCRIPT
+            "anti_iframe_script": ANTI_IFRAME_BREAKOUT_SCRIPT,  # 反iframe跳出脚本
+            "inject_js": INJECTED_SCRIPT  # 交互脚本
         }
         
         params_json = json.dumps(params, ensure_ascii=True)
@@ -567,9 +633,43 @@ async def forward_request(req: ForwardRequest):
                 headers.pop(h.capitalize(), None)
                 headers.pop(h.upper(), None)
 
-            # 确保有 User-Agent
+            # 🔥 增强请求头伪装，模拟真实浏览器
+            # 解析目标URL以获取域名
+            from urllib.parse import urlparse
+            parsed_url = urlparse(req.url)
+            origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+            # 设置完整的浏览器请求头
             if 'user-agent' not in [k.lower() for k in headers.keys()]:
                 headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+            if 'accept' not in [k.lower() for k in headers.keys()]:
+                # 根据请求类型设置不同的Accept
+                if req.url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg')):
+                    headers['Accept'] = 'image/webp,image/apng,image/*,*/*;q=0.8'
+                elif req.url.endswith(('.css',)):
+                    headers['Accept'] = 'text/css,*/*;q=0.1'
+                elif req.url.endswith(('.js',)):
+                    headers['Accept'] = '*/*'
+                else:
+                    headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
+
+            if 'accept-language' not in [k.lower() for k in headers.keys()]:
+                headers['Accept-Language'] = 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7'
+
+            # 添加Referer（设置为同源或目标网站首页）
+            if 'referer' not in [k.lower() for k in headers.keys()]:
+                headers['Referer'] = origin + '/'
+
+            # 添加Origin（用于CORS请求）
+            if req.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
+                if 'origin' not in [k.lower() for k in headers.keys()]:
+                    headers['Origin'] = origin
+
+            # 添加Sec-Fetch-* 头（Chrome的安全特性）
+            headers['Sec-Fetch-Dest'] = 'empty'
+            headers['Sec-Fetch-Mode'] = 'cors'
+            headers['Sec-Fetch-Site'] = 'same-origin'
 
             print(f"[Proxy/Forward] 发送请求到: {req.url}")
             print(f"[Proxy/Forward] 方法: {req.method}")
@@ -586,15 +686,36 @@ async def forward_request(req: ForwardRequest):
             print(f"[Proxy/Forward] 响应状态: {response.status_code}")
             print(f"[Proxy/Forward] 响应头: {list(response.headers.keys())}")
 
-            # 转换响应头为字典（移除敏感头）
+            # 🔥 转换响应头为字典，移除限制性头部
             response_headers = {}
+            # 需要移除的限制性响应头
             skip_headers = [
+                # 传输相关
                 'transfer-encoding', 'content-encoding', 'connection',
-                'keep-alive', 'upgrade', 'strict-transport-security'
+                'keep-alive', 'upgrade',
+                # 🔥 安全限制头（会阻止 iframe 嵌入或跨域访问）
+                'x-frame-options',           # 防止页面被嵌入iframe
+                'content-security-policy',    # CSP策略可能限制iframe
+                'x-content-type-options',     # 可能影响资源加载
+                'strict-transport-security',  # HSTS
+                'x-xss-protection',           # XSS保护
             ]
+
+            removed_security_headers = []  # 记录被移除的安全头
+
             for key, value in response.headers.items():
-                if key.lower() not in skip_headers:
-                    response_headers[key.lower()] = value
+                key_lower = key.lower()
+                if key_lower not in skip_headers:
+                    response_headers[key_lower] = value
+                elif key_lower in ['x-frame-options', 'content-security-policy', 'x-content-type-options']:
+                    # 记录被移除的安全头
+                    removed_security_headers.append(f"{key}: {value}")
+
+            # 输出被移除的安全头（用于调试）
+            if removed_security_headers:
+                print(f"[Proxy/Forward] 🔓 移除限制性响应头:")
+                for header in removed_security_headers:
+                    print(f"[Proxy/Forward]   - {header}")
 
             # 判断是否为二进制内容
             content_type = response.headers.get('content-type', '').lower()
