@@ -141,10 +141,29 @@ async function loadManualMode(url) {
         if (!response.ok) {
             const errorData = await response.json();
 
-            if (errorData.detail?.error?.includes('blocked') ||
-                errorData.detail?.error?.includes('anti-bot') ||
-                errorData.detail?.details?.includes('anti-scraping')) {
-                showAntiScrapingModal(url);
+            console.error('[Main] Backend error:', errorData);
+
+            // 显示详细的错误信息
+            if (errorData.detail) {
+                const detail = errorData.detail;
+
+                // 检查是否是超时错误
+                if (detail.error && detail.error.includes('Timeout')) {
+                    alert('加载超时！\n\n可能的原因：\n1. 网站访问速度太慢\n2. 网站有反爬虫保护\n\n建议：\n- 尝试使用"智能模式"\n- 或尝试其他网站（如 https://example.com）');
+                    return;
+                }
+
+                // 检查反爬虫
+                if (detail.error?.includes('blocked') ||
+                    detail.error?.includes('anti-bot') ||
+                    detail.details?.includes('anti-scraping')) {
+                    showAntiScrapingModal(url);
+                    return;
+                }
+
+                // 显示完整错误
+                const errorMsg = detail.error || detail.traceback || JSON.stringify(detail);
+                alert(`加载失败：\n\n${errorMsg}\n\n提示：\n- 检查网络连接\n- 尝试其他网站\n- 使用"智能模式"`);
                 return;
             }
 
