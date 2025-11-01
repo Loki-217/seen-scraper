@@ -49,8 +49,10 @@ const PROXY_DOMAINS = [
     'source.unsplash.com',
     'cdn.unsplash.com',
 
-    // 豆瓣相关域名
+    // 豆瓣相关域名（包括主站和移动站）
     'douban.com',
+    'm.douban.com',           // 🔥 移动版豆瓣，AJAX API请求
+    'movie.douban.com',       // 🔥 电影站
     'img1.doubanio.com',
     'img2.doubanio.com',
     'img3.doubanio.com',
