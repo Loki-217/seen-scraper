@@ -1,0 +1,97 @@
+<!DOCTYPE html><html lang="en"><head>
+<base href="https://example.com/">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+<style>
+/* 🔥 修复 Element UI 图标字体路径 */
+@font-face {
+    font-family: element-icons;
+    src: url(https://unpkg.com/element-ui/lib/theme-chalk/fonts/element-icons.woff) format("woff"),
+         url(https://unpkg.com/element-ui/lib/theme-chalk/fonts/element-icons.ttf) format("truetype");
+    font-weight: 400;
+    font-display: swap;
+}
+
+/* 🔥 强制显示所有隐藏元素（反反调试） */
+.runoob-block,
+.runoob_cf,
+div[style*="display: none"],
+div[style*="display:none"],
+div[style*="visibility: hidden"],
+div[style*="visibility:hidden"] {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    overflow: visible !important;
+}
+
+/* 强制显示底部二维码区域 */
+.runoob-block img,
+.runoob_cf img,
+footer img {
+    display: block !important;
+    visibility: visible !important;
+}
+</style><title>Example Domain</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:0.8}a:link,a:visited{color:#348}</style><script type="text/javascript">
+(function() {
+    if (window.__scraperInjected) return;
+    window.__scraperInjected = true;
+    
+    console.log('[SeenFetch] Script injected!');
+    
+    var style = document.createElement('style');
+    style.innerHTML = '.scraper-hover { outline: 2px solid #4CAF50 !important; outline-offset: 2px; }';
+    document.head.appendChild(style);
+
+    document.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log('[SeenFetch] Element clicked:', e.target);
+        
+        var element = e.target;
+        var selector = element.tagName.toLowerCase();
+        
+        if (element.id) {
+            selector = '#' + element.id;
+        } else if (element.className && typeof element.className === 'string') {
+            var classes = element.className.split(' ').filter(function(c) { return c && !c.match(/^scraper-/); });
+            if (classes.length > 0) {
+                selector = element.tagName.toLowerCase() + '.' + classes[0];
+            }
+        }
+        
+        var elementInfo = {
+            tagName: element.tagName.toLowerCase(),
+            className: element.className,
+            id: element.id,
+            text: (element.innerText || element.textContent || '').substring(0, 100),
+            selector: selector,
+            href: element.href || '',
+            src: element.src || ''
+        };
+        
+        console.log('[SeenFetch] Posting message:', elementInfo);
+        
+       window.parent.postMessage({
+           type: 'element-clicked',
+           element: elementInfo,
+           selector: selector
+        }, '*');
+        
+        return false;
+    }, true);
+    
+    document.addEventListener('mouseover', function(e) {
+        e.target.classList.add('scraper-hover');
+    }, true);
+    
+    document.addEventListener('mouseout', function(e) {
+        e.target.classList.remove('scraper-hover');
+    }, true);
+})();
+</script><style>.scraper-hover { outline: 2px solid #4CAF50 !important; outline-offset: 2px; }</style></head><body><div><h1>Example Domain</h1><p>This domain is for use in documentation examples without needing permission. Avoid use in operations.</p><p><a href="https://iana.org/domains/example">Learn more</a></p></div>
+</body></html>

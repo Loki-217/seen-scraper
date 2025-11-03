@@ -41,6 +41,8 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ```bash
 python tests/test_iframe_html_extraction.py https://example.com
+
+python tests/test_iframe_html_extraction.py https://unsplash.com/
 ```
 
 输出示例：
@@ -209,6 +211,7 @@ open tests/output/iframe_html/latest.html
 
 # Windows
 start tests/output/iframe_html/latest.html
+start tests/output/iframe_html/20251104_000239_unsplash.com_.clean.html
 
 # 或者使用浏览器直接打开
 file:///home/user/seen-scraper/tests/output/iframe_html/latest.html
