@@ -17,6 +17,8 @@ import argparse
 import json
 import os
 import sys
+import platform
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -127,7 +129,7 @@ class IframeHTMLExtractor:
         print(f"💾 HTML已保存: {filepath}")
         print(f"📋 元数据已保存: {meta_filepath}")
 
-        # 创建latest软链接
+        # 创建latest链接或副本
         latest_link = self.output_dir / "latest.html"
         latest_meta_link = self.output_dir / "latest.json"
 
@@ -136,10 +138,26 @@ class IframeHTMLExtractor:
         if latest_meta_link.exists():
             latest_meta_link.unlink()
 
-        os.symlink(filepath.name, latest_link)
-        os.symlink(meta_filepath.name, latest_meta_link)
+        # Windows系统使用复制，Linux/Mac使用软链接
+        is_windows = platform.system() == 'Windows'
 
-        print(f"🔗 最新文件链接: {latest_link}")
+        try:
+            if is_windows:
+                # Windows: 复制文件
+                shutil.copy2(filepath, latest_link)
+                shutil.copy2(meta_filepath, latest_meta_link)
+                print(f"📄 最新文件副本: {latest_link}")
+            else:
+                # Linux/Mac: 创建软链接
+                os.symlink(filepath.name, latest_link)
+                os.symlink(meta_filepath.name, latest_meta_link)
+                print(f"🔗 最新文件链接: {latest_link}")
+        except OSError as e:
+            # 如果软链接创建失败（例如权限问题），降级为复制
+            print(f"⚠️  无法创建链接，使用复制代替: {e}")
+            shutil.copy2(filepath, latest_link)
+            shutil.copy2(meta_filepath, latest_meta_link)
+            print(f"📄 最新文件副本: {latest_link}")
 
         return filepath
 
