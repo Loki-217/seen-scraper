@@ -20,63 +20,89 @@ class SmartClickRequest(BaseModel):
     url: str
     element: Dict[str, Any]
 
-# 简化的注入脚本
+# 支持模式切换的注入脚本
 INJECTED_SCRIPT = r"""
 (function() {
     if (window.__scraperInjected) return;
     window.__scraperInjected = true;
-    
+
     console.log('[SeenFetch] Script injected!');
-    
+
+    // 🔥 模式控制：'config' 或 'login'
+    var mode = 'config';
+
     var style = document.createElement('style');
     style.innerHTML = '.scraper-hover { outline: 2px solid #4CAF50 !important; outline-offset: 2px; }';
     document.head.appendChild(style);
 
-    document.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        console.log('[SeenFetch] Element clicked:', e.target);
-        
-        var element = e.target;
-        var selector = element.tagName.toLowerCase();
-        
-        if (element.id) {
-            selector = '#' + element.id;
-        } else if (element.className && typeof element.className === 'string') {
-            var classes = element.className.split(' ').filter(function(c) { return c && !c.match(/^scraper-/); });
-            if (classes.length > 0) {
-                selector = element.tagName.toLowerCase() + '.' + classes[0];
-            }
+    // 🔥 监听模式切换消息
+    window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'switch-mode') {
+            mode = event.data.mode;
+            console.log('[SeenFetch] Mode switched to:', mode);
+
+            // 清除所有高亮
+            var highlighted = document.querySelectorAll('.scraper-hover');
+            highlighted.forEach(function(el) {
+                el.classList.remove('scraper-hover');
+            });
         }
-        
-        var elementInfo = {
-            tagName: element.tagName.toLowerCase(),
-            className: element.className,
-            id: element.id,
-            text: (element.innerText || element.textContent || '').substring(0, 100),
-            selector: selector,
-            href: element.href || '',
-            src: element.src || ''
-        };
-        
-        console.log('[SeenFetch] Posting message:', elementInfo);
-        
-       window.parent.postMessage({
-           type: 'element-clicked',
-           element: elementInfo,
-           selector: selector
-        }, '*');
-        
-        return false;
+    });
+
+    // 🔥 点击事件：只在config模式下拦截
+    document.addEventListener('click', function(e) {
+        if (mode === 'config') {
+            e.preventDefault();
+            e.stopPropagation();
+
+            console.log('[SeenFetch] Element clicked:', e.target);
+
+            var element = e.target;
+            var selector = element.tagName.toLowerCase();
+
+            if (element.id) {
+                selector = '#' + element.id;
+            } else if (element.className && typeof element.className === 'string') {
+                var classes = element.className.split(' ').filter(function(c) { return c && !c.match(/^scraper-/); });
+                if (classes.length > 0) {
+                    selector = element.tagName.toLowerCase() + '.' + classes[0];
+                }
+            }
+
+            var elementInfo = {
+                tagName: element.tagName.toLowerCase(),
+                className: element.className,
+                id: element.id,
+                text: (element.innerText || element.textContent || '').substring(0, 100),
+                selector: selector,
+                href: element.href || '',
+                src: element.src || ''
+            };
+
+            console.log('[SeenFetch] Posting message:', elementInfo);
+
+            window.parent.postMessage({
+                type: 'element-clicked',
+                element: elementInfo,
+                selector: selector
+            }, '*');
+
+            return false;
+        }
+        // login模式：不拦截，让点击正常执行
     }, true);
-    
+
+    // 🔥 鼠标悬停：只在config模式下高亮
     document.addEventListener('mouseover', function(e) {
-        e.target.classList.add('scraper-hover');
+        if (mode === 'config') {
+            e.target.classList.add('scraper-hover');
+        }
     }, true);
-    
+
     document.addEventListener('mouseout', function(e) {
-        e.target.classList.remove('scraper-hover');
+        if (mode === 'config') {
+            e.target.classList.remove('scraper-hover');
+        }
     }, true);
 })();
 """
@@ -442,3 +468,222 @@ async def render_page(req: RenderRequest):
 @router.get("/test")
 async def test_proxy():
     return {"status": "ok"}
+
+# ==================== 登录检测功能 ====================
+
+class DetectLoginRequest(BaseModel):
+    url: str
+    timeout_ms: int = 5000
+
+# Playwright检测登录脚本
+DETECT_LOGIN_TEMPLATE = """
+import sys
+import json
+import io
+
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+from playwright.sync_api import sync_playwright
+
+def detect_login(url, timeout_ms):
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                ]
+            )
+
+            context = browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            )
+
+            page = context.new_page()
+
+            # 访问页面
+            response = page.goto(url, wait_until="load", timeout=timeout_ms)
+            page.wait_for_timeout(1000)
+
+            result = {
+                "success": True,
+                "required": False,
+                "confidence": "low",
+                "reason": "未检测到登录需求",
+                "details": {}
+            }
+
+            # 🔥 检测层1：HTTP状态码
+            if response.status in [401, 403]:
+                result["required"] = True
+                result["confidence"] = "high"
+                result["reason"] = f"HTTP {response.status} - 需要认证"
+                result["details"]["status_code"] = response.status
+                return result
+
+            # 🔥 检测层2：URL重定向
+            current_url = page.url
+            if 'login' in current_url.lower() or 'signin' in current_url.lower():
+                result["required"] = True
+                result["confidence"] = "high"
+                result["reason"] = "URL跳转到登录页"
+                result["details"]["redirected_url"] = current_url
+                return result
+
+            # 🔥 检测层3：页面元素
+            login_indicators = {
+                'login_form': 'form[action*="login"], form[action*="signin"]',
+                'password_input': 'input[type="password"]',
+                'login_button': 'button:has-text("登录"), button:has-text("Sign In"), button:has-text("Log In")',
+            }
+
+            detected_elements = {}
+            for key, selector in login_indicators.items():
+                try:
+                    count = page.locator(selector).count()
+                    if count > 0:
+                        detected_elements[key] = count
+                except:
+                    pass
+
+            # 如果同时有表单和密码框，很可能需要登录
+            if 'login_form' in detected_elements and 'password_input' in detected_elements:
+                result["required"] = True
+                result["confidence"] = "high"
+                result["reason"] = "检测到登录表单和密码输入框"
+                result["details"]["elements"] = detected_elements
+                return result
+
+            # 只有密码框，中等置信度
+            if 'password_input' in detected_elements:
+                result["required"] = True
+                result["confidence"] = "medium"
+                result["reason"] = "检测到密码输入框"
+                result["details"]["elements"] = detected_elements
+                return result
+
+            # 🔥 检测层4：提示文本
+            login_texts = [
+                '请登录', 'Please log in', 'Please sign in',
+                'Sign in to continue', 'Login to continue',
+                '登录后查看', 'Login required', '需要登录'
+            ]
+
+            found_texts = []
+            for text in login_texts:
+                try:
+                    if page.locator(f'text="{text}"').count() > 0:
+                        found_texts.append(text)
+                except:
+                    pass
+
+            if found_texts:
+                result["required"] = True
+                result["confidence"] = "medium"
+                result["reason"] = f"检测到登录提示文字: {found_texts[0]}"
+                result["details"]["texts"] = found_texts
+                return result
+
+            browser.close()
+            return result
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "type": type(e).__name__
+        }
+
+if __name__ == "__main__":
+    params = json.loads(sys.argv[1])
+    result = detect_login(params["url"], params["timeout_ms"])
+    output = json.dumps(result, ensure_ascii=True)
+    sys.stdout.buffer.write(output.encode('utf-8'))
+    sys.stdout.buffer.flush()
+"""
+
+@router.post("/detect-login")
+async def detect_login(req: DetectLoginRequest):
+    """检测网站是否需要登录"""
+
+    print(f"[API] Detecting login requirement for: {req.url}")
+
+    temp_script = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            suffix='.py',
+            delete=False,
+            encoding='utf-8'
+        ) as f:
+            f.write(DETECT_LOGIN_TEMPLATE)
+            temp_script = f.name
+
+        params = {
+            "url": req.url,
+            "timeout_ms": req.timeout_ms
+        }
+
+        params_json = json.dumps(params, ensure_ascii=True)
+
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+
+        result = subprocess.run(
+            [sys.executable, temp_script, params_json],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            encoding='utf-8',
+            env=env
+        )
+
+        print("=== Login Detection STDERR ===")
+        print(result.stderr)
+        print("=" * 50)
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Detection process failed",
+                    "returncode": result.returncode,
+                    "stderr": result.stderr
+                }
+            )
+
+        try:
+            output = json.loads(result.stdout)
+            print(f"[API] Detection result: {output}")
+            return output
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Failed to parse detection output",
+                    "parse_error": str(e),
+                    "stdout": result.stdout[:500]
+                }
+            )
+
+    except Exception as e:
+        import traceback
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": str(e),
+                "type": type(e).__name__,
+                "traceback": traceback.format_exc()
+            }
+        )
+    finally:
+        if temp_script and os.path.exists(temp_script):
+            try:
+                os.unlink(temp_script)
+            except:
+                pass
