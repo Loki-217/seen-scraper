@@ -17,6 +17,7 @@ const LoginSystem = {
             });
 
             const result = await response.json();
+            console.log('[Login] 检测结果:', result);
 
             if (result.success && result.needs_login) {
                 console.log('[Login] 检测到需要登录:', result.reasons);
@@ -467,6 +468,7 @@ LoginSystem.autoDetect = function() {
         console.warn('[Login] 未找到iframe元素');
     }
 
+    console.log('[Login] 调用检测API, URL:', currentUrl, 'HTML长度:', html ? html.length : 'null');
     this.detectLoginRequirement(currentUrl, html);
 };
 

@@ -162,11 +162,11 @@ async function loadManualMode(url) {
             iframe.srcdoc = data.html;
         }
 
-        // 延迟1秒后自动检测登录需求
+        // 延迟1秒后自动检测登录需求（直接传递HTML，避免跨域限制）
         setTimeout(() => {
-            if (window.LoginSystem && typeof window.LoginSystem.autoDetect === 'function') {
+            if (window.LoginSystem && typeof window.LoginSystem.detectLoginRequirement === 'function') {
                 console.log('[Manual Mode] 触发登录自动检测');
-                window.LoginSystem.autoDetect();
+                window.LoginSystem.detectLoginRequirement(url, data.html);
             }
         }, 1000);
 
@@ -340,11 +340,11 @@ async function loadSmartMode(url) {
             console.log('[SmartMode] 显示分析结果, 字段数:', analysisResult.suggestions?.length);
             displaySmartResults(analysisResult);
 
-            // 延迟1秒后自动检测登录需求
+            // 延迟1秒后自动检测登录需求（直接传递HTML，避免跨域限制）
             setTimeout(() => {
-                if (window.LoginSystem && typeof window.LoginSystem.autoDetect === 'function') {
+                if (window.LoginSystem && typeof window.LoginSystem.detectLoginRequirement === 'function') {
                     console.log('[Smart Mode] 触发登录自动检测');
-                    window.LoginSystem.autoDetect();
+                    window.LoginSystem.detectLoginRequirement(url, previewResult.html);
                 }
             }, 1000);
 
