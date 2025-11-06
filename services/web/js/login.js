@@ -5,6 +5,7 @@
 const LoginSystem = {
     currentUrl: '',
     currentDomain: '',
+    lastLoginCheck: {},  // 记录最近的登录检测时间，防止重复弹窗
 
     // ==================== 自动检测登录需求 ====================
     async detectLoginRequirement(url, html) {
@@ -19,6 +20,24 @@ const LoginSystem = {
 
             if (result.success && result.needs_login) {
                 console.log('[Login] 检测到需要登录:', result.reasons);
+
+                // 如果已经有Cookie，不弹窗（可能Cookie需要一些时间生效）
+                if (result.has_cookies) {
+                    console.log('[Login] 域名已有Cookie，跳过登录提示');
+                    return result;
+                }
+
+                // 防止短时间内重复弹窗（5分钟内）
+                const now = Date.now();
+                const lastCheck = this.lastLoginCheck[result.domain] || 0;
+                if (now - lastCheck < 5 * 60 * 1000) {
+                    console.log('[Login] 5分钟内已提示过登录，跳过');
+                    return result;
+                }
+
+                // 记录本次检测时间
+                this.lastLoginCheck[result.domain] = now;
+
                 this.currentUrl = url;
                 this.currentDomain = result.domain;
                 this.showLoginModal(result);

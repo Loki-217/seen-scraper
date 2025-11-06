@@ -150,10 +150,41 @@ def render_page(url, timeout_ms, wait_for, inject_js, cookies=None):
             # 🔥 注入已保存的Cookie
             if cookies and len(cookies) > 0:
                 try:
-                    context.add_cookies(cookies)
-                    print(f"[Render] 已注入 {len(cookies)} 个Cookie", file=sys.stderr)
+                    # 修正Cookie的domain字段，确保Playwright能正确应用
+                    from urllib.parse import urlparse
+                    parsed_url = urlparse(url)
+                    target_domain = parsed_url.netloc
+
+                    fixed_cookies = []
+                    for cookie in cookies:
+                        cookie_copy = cookie.copy()
+
+                        # 如果Cookie的domain为空或与目标domain不匹配，设置为目标domain
+                        if not cookie_copy.get('domain'):
+                            cookie_copy['domain'] = target_domain
+                        else:
+                            # 确保domain以点开头（用于子域名共享）
+                            cookie_domain = cookie_copy['domain']
+                            if not cookie_domain.startswith('.'):
+                                cookie_copy['domain'] = '.' + cookie_domain
+
+                        # 确保有url字段（Playwright可能需要）
+                        if 'url' not in cookie_copy:
+                            cookie_copy['url'] = url
+
+                        fixed_cookies.append(cookie_copy)
+
+                    context.add_cookies(fixed_cookies)
+                    print(f"[Render] ✅ 已注入 {len(fixed_cookies)} 个Cookie", file=sys.stderr)
+
+                    # 打印第一个Cookie的domain用于调试
+                    if fixed_cookies:
+                        print(f"[Render] Cookie示例 - domain: {fixed_cookies[0].get('domain')}, name: {fixed_cookies[0].get('name')}", file=sys.stderr)
+
                 except Exception as e:
-                    print(f"[Render] Cookie注入失败: {e}", file=sys.stderr)
+                    print(f"[Render] ❌ Cookie注入失败: {e}", file=sys.stderr)
+                    import traceback
+                    print(traceback.format_exc(), file=sys.stderr)
             
             page = context.new_page()
             
