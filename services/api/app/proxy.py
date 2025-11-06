@@ -11,10 +11,21 @@ import os
 
 router = APIRouter(prefix="/api/proxy", tags=["proxy"])
 
+# Cookie存储字典（按域名存储）
+_cookies_storage: Dict[str, list] = {}
+
 class RenderRequest(BaseModel):
     url: str
     timeout_ms: int = 30000
     wait_for: Optional[str] = None
+
+class CookieImportRequest(BaseModel):
+    domain: str
+    cookies: list
+
+class LoginDetectRequest(BaseModel):
+    url: str
+    html: Optional[str] = None
 
 class SmartClickRequest(BaseModel):
     url: str
@@ -442,3 +453,409 @@ async def render_page(req: RenderRequest):
 @router.get("/test")
 async def test_proxy():
     return {"status": "ok"}
+
+# ==================== Cookie管理API ====================
+
+@router.post("/cookies/import")
+async def import_cookies(req: CookieImportRequest):
+    """导入Cookie"""
+    try:
+        _cookies_storage[req.domain] = req.cookies
+        print(f"[Cookie] 已导入 {len(req.cookies)} 个Cookie到域名: {req.domain}")
+        return {
+            "success": True,
+            "domain": req.domain,
+            "count": len(req.cookies)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/cookies/export/{domain}")
+async def export_cookies(domain: str):
+    """导出指定域名的Cookie"""
+    cookies = _cookies_storage.get(domain, [])
+    return {
+        "success": True,
+        "domain": domain,
+        "cookies": cookies,
+        "count": len(cookies)
+    }
+
+@router.get("/cookies/list")
+async def list_cookies():
+    """列出所有已保存的Cookie域名"""
+    domains = []
+    for domain, cookies in _cookies_storage.items():
+        domains.append({
+            "domain": domain,
+            "count": len(cookies),
+            "has_cookies": len(cookies) > 0
+        })
+    return {
+        "success": True,
+        "domains": domains,
+        "total": len(domains)
+    }
+
+@router.delete("/cookies/{domain}")
+async def delete_cookies(domain: str):
+    """删除指定域名的Cookie"""
+    if domain in _cookies_storage:
+        del _cookies_storage[domain]
+        return {"success": True, "message": f"已删除域名 {domain} 的Cookie"}
+    else:
+        raise HTTPException(status_code=404, detail="域名不存在")
+
+# ==================== 登录检测API ====================
+
+@router.post("/detect-login")
+async def detect_login(req: LoginDetectRequest):
+    """
+    四层登录检测：
+    1. HTTP状态码检测（401/403）
+    2. URL重定向检测（跳转到login页面）
+    3. 页面元素检测（登录表单、登录按钮）
+    4. 文本提示检测（多语言"登录"关键词）
+    """
+    try:
+        from urllib.parse import urlparse
+
+        # 解析URL
+        parsed = urlparse(req.url)
+        domain = parsed.netloc
+
+        # 检测标志
+        needs_login = False
+        reasons = []
+
+        # 第2层：URL重定向检测
+        url_lower = req.url.lower()
+        if any(keyword in url_lower for keyword in ['login', 'signin', 'auth', 'account']):
+            needs_login = True
+            reasons.append("URL包含登录关键词")
+
+        # 如果提供了HTML，进行元素和文本检测
+        if req.html:
+            html_lower = req.html.lower()
+
+            # 第3层：页面元素检测
+            if any(keyword in html_lower for keyword in [
+                'type="password"',
+                'name="password"',
+                'id="password"',
+                '<form' and ('login' in html_lower or 'signin' in html_lower)
+            ]):
+                needs_login = True
+                reasons.append("检测到登录表单元素")
+
+            # 第4层：多语言文本检测
+            login_keywords = [
+                'please log in', 'please sign in', 'login required',
+                '请登录', '请先登录', '需要登录',
+                'ログイン', 'サインイン',
+                'se connecter', 'iniciar sesión'
+            ]
+            if any(keyword in html_lower for keyword in login_keywords):
+                needs_login = True
+                reasons.append("检测到登录提示文本")
+
+        return {
+            "success": True,
+            "needs_login": needs_login,
+            "domain": domain,
+            "reasons": reasons,
+            "has_cookies": domain in _cookies_storage
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "needs_login": False
+        }
+
+# ==================== iframe登录API ====================
+
+@router.get("/login-in-iframe")
+async def login_in_iframe(url: str):
+    """返回用于iframe登录的HTML页面"""
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        domain = parsed.netloc
+
+        # 构建iframe登录页面
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>登录 - {domain}</title>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }}
+        iframe {{
+            width: 100%;
+            height: 100vh;
+            border: none;
+        }}
+    </style>
+</head>
+<body>
+    <iframe src="{url}" sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
+</body>
+</html>
+"""
+        return {"success": True, "html": html, "domain": domain}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== 浏览器弹窗登录API ====================
+
+BROWSER_LOGIN_SCRIPT = """
+import sys
+import json
+import io
+import time
+
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+from playwright.sync_api import sync_playwright
+from urllib.parse import urlparse
+
+def open_browser_for_login(url, domain):
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=False,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--window-size=1280,800'
+                ]
+            )
+
+            context = browser.new_context(
+                viewport={'width': 1280, 'height': 800},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            )
+
+            page = context.new_page()
+
+            # 注入确认按钮
+            page.add_init_script('''
+                window.addEventListener('load', () => {
+                    const banner = document.createElement('div');
+                    banner.style.cssText = `
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        z-index: 999999;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 15px;
+                        text-align: center;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                    `;
+
+                    banner.innerHTML = `
+                        <div style="font-size: 16px; font-weight: 600; margin-bottom: 10px;">
+                            请在此窗口完成登录
+                        </div>
+                        <button id="loginCompleteBtn" style="
+                            background: white;
+                            color: #667eea;
+                            border: none;
+                            padding: 10px 30px;
+                            border-radius: 8px;
+                            font-size: 14px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                        ">
+                            我已完成登录 ✓
+                        </button>
+                    `;
+
+                    document.body.appendChild(banner);
+
+                    document.getElementById('loginCompleteBtn').addEventListener('click', () => {
+                        window.__loginCompleted = true;
+                    });
+                });
+            ''')
+
+            # 记录初始Cookie数量
+            page.goto(url, wait_until="load")
+            initial_cookies = context.cookies()
+            initial_count = len(initial_cookies)
+
+            print(f"[Browser] 初始Cookie数量: {initial_count}", file=sys.stderr)
+
+            # 等待登录完成（双重检测）
+            login_completed = False
+            max_wait = 300  # 5分钟超时
+
+            for i in range(max_wait):
+                time.sleep(1)
+
+                # 检测1：按钮被点击
+                button_clicked = page.evaluate('window.__loginCompleted === true')
+
+                # 检测2：Cookie数量增加超过3个
+                current_cookies = context.cookies()
+                cookie_increased = len(current_cookies) > initial_count + 3
+
+                if button_clicked or cookie_increased:
+                    login_completed = True
+                    reason = "按钮点击" if button_clicked else "Cookie增加"
+                    print(f"[Browser] 登录完成（{reason}）", file=sys.stderr)
+                    break
+
+            if not login_completed:
+                browser.close()
+                return {
+                    "success": False,
+                    "error": "登录超时（5分钟）",
+                    "timeout": True
+                }
+
+            # 等待2秒确保Cookie完全保存
+            time.sleep(2)
+
+            # 获取所有Cookie
+            all_cookies = context.cookies()
+
+            browser.close()
+
+            return {
+                "success": True,
+                "cookies": all_cookies,
+                "count": len(all_cookies),
+                "domain": domain
+            }
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+if __name__ == "__main__":
+    params = json.loads(sys.argv[1])
+    result = open_browser_for_login(params["url"], params["domain"])
+    output = json.dumps(result, ensure_ascii=True)
+    sys.stdout.buffer.write(output.encode('utf-8'))
+    sys.stdout.buffer.flush()
+"""
+
+@router.post("/open-browser-login")
+async def open_browser_login(req: RenderRequest):
+    """打开浏览器窗口供用户登录"""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(req.url)
+    domain = parsed.netloc
+
+    print(f"[Browser Login] 打开浏览器登录: {req.url}")
+
+    temp_script = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            suffix='.py',
+            delete=False,
+            encoding='utf-8'
+        ) as f:
+            f.write(BROWSER_LOGIN_SCRIPT)
+            temp_script = f.name
+
+        params = {"url": req.url, "domain": domain}
+        params_json = json.dumps(params, ensure_ascii=True)
+
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+
+        # 执行浏览器登录脚本（阻塞等待）
+        result = subprocess.run(
+            [sys.executable, temp_script, params_json],
+            capture_output=True,
+            text=True,
+            timeout=360,  # 6分钟超时
+            encoding='utf-8',
+            env=env
+        )
+
+        print("=== Browser Login STDERR ===")
+        print(result.stderr)
+        print("=" * 50)
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "浏览器登录失败",
+                    "stderr": result.stderr
+                }
+            )
+
+        output = json.loads(result.stdout)
+
+        if output.get("success"):
+            # 保存Cookie到内存
+            cookies = output.get("cookies", [])
+            _cookies_storage[domain] = cookies
+            print(f"[Browser Login] ✅ 成功，保存了 {len(cookies)} 个Cookie")
+
+        return output
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=408,
+            detail={"error": "登录超时"}
+        )
+    except Exception as e:
+        import traceback
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+        )
+    finally:
+        if temp_script and os.path.exists(temp_script):
+            try:
+                os.unlink(temp_script)
+            except:
+                pass
+
+# ==================== 保存iframe登录的Cookie ====================
+
+@router.post("/save-iframe-cookies")
+async def save_iframe_cookies(req: CookieImportRequest):
+    """保存从iframe登录获取的Cookie"""
+    try:
+        domain = req.domain
+        cookies = req.cookies
+
+        _cookies_storage[domain] = cookies
+        print(f"[iframe Login] 保存了 {len(cookies)} 个Cookie到域名: {domain}")
+
+        return {
+            "success": True,
+            "domain": domain,
+            "count": len(cookies),
+            "message": "Cookie已保存"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

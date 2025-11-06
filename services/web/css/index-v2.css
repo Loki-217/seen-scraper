@@ -1036,23 +1036,318 @@ body {
     .main-wrapper {
         flex-direction: column;
     }
-    
+
     .left-sidebar {
         width: 100%;
         height: auto;
         flex-direction: row;
         padding: 0.5rem;
     }
-    
+
     .mode-content {
         padding: 0.5rem;
     }
-    
+
     .web-preview {
         height: 400px;
     }
-    
+
     .data-preview {
         height: 300px;
+    }
+}
+
+/* ========================================
+   登录系统样式
+   ======================================== */
+
+/* 登录弹窗遮罩 */
+.login-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(5px);
+    animation: fadeIn 0.3s ease;
+}
+
+.login-modal.active {
+    display: flex;
+}
+
+/* 登录弹窗内容 - 紫色渐变 */
+.login-modal-content {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    width: 90%;
+    max-width: 600px;
+    max-height: 85vh;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideUp 0.4s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(50px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* 登录弹窗头部 */
+.login-modal-header {
+    padding: 1.5rem 2rem;
+    background: rgba(0, 0, 0, 0.15);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+}
+
+.login-modal-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.login-close-btn {
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+.login-close-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: rotate(90deg);
+}
+
+/* 登录弹窗主体 */
+.login-modal-body {
+    flex: 1;
+    padding: 2rem;
+    overflow-y: auto;
+    color: white;
+}
+
+/* 信息框 */
+.login-info-box {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.login-info-box p {
+    margin: 0.5rem 0;
+    line-height: 1.6;
+}
+
+/* 登录方式标题 */
+.login-methods h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+/* 登录方式卡片 */
+.login-method-card {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.login-method-card:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.4);
+    transform: translateX(5px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.method-icon {
+    font-size: 2rem;
+    min-width: 50px;
+    text-align: center;
+}
+
+.method-info {
+    flex: 1;
+}
+
+.method-info h4 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.method-info p {
+    margin: 0;
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.method-arrow {
+    font-size: 1.5rem;
+    opacity: 0.6;
+    transition: all 0.3s ease;
+}
+
+.login-method-card:hover .method-arrow {
+    opacity: 1;
+    transform: translateX(5px);
+}
+
+/* 登录弹窗底部 */
+.login-modal-footer {
+    padding: 1rem 2rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+}
+
+/* 玻璃态按钮样式 */
+.login-modal .btn {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.login-modal .btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.login-modal .btn-primary {
+    background: white;
+    color: #667eea;
+    border-color: white;
+}
+
+.login-modal .btn-primary:hover {
+    background: #f0f0f0;
+    color: #5568d3;
+}
+
+/* iframe登录容器 */
+.iframe-login-container {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    color: #333;
+}
+
+.iframe-login-header {
+    margin-bottom: 1rem;
+}
+
+.iframe-login-header h3 {
+    margin: 0 0 0.5rem 0;
+    color: #333;
+}
+
+/* Cookie导入容器 */
+.cookie-import-container {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    color: #333;
+}
+
+.cookie-import-container h3 {
+    margin: 0 0 0.5rem 0;
+    color: #333;
+}
+
+/* Cookie列表 */
+.cookie-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.cookie-item {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .login-modal-content {
+        width: 95%;
+        max-width: none;
+    }
+
+    .login-modal-header {
+        padding: 1rem 1.5rem;
+    }
+
+    .login-modal-header h2 {
+        font-size: 1.25rem;
+    }
+
+    .login-modal-body {
+        padding: 1.5rem;
+    }
+
+    .login-method-card {
+        padding: 1rem;
+    }
+
+    .method-icon {
+        font-size: 1.5rem;
+        min-width: 40px;
+    }
+
+    .method-info h4 {
+        font-size: 1rem;
+    }
+
+    .method-info p {
+        font-size: 0.85rem;
     }
 }
