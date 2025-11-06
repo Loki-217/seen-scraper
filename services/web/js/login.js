@@ -118,12 +118,22 @@ const LoginSystem = {
                     <h3>请在下方完成登录</h3>
                     <p style="color: #999; font-size: 0.9rem;">登录完成后，点击下方按钮保存Cookie</p>
                 </div>
+
+                <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid #ffc107;">
+                    <strong>⚠️ 提示：</strong>如果下方显示"验证浏览器"或空白页面，说明该网站禁止在iframe中登录。<br>
+                    <span style="color: #856404;">请使用"浏览器弹窗登录"方式。</span>
+                </div>
+
                 <iframe id="loginIframe" src="${this.currentUrl}"
                         style="width: 100%; height: 400px; border: 1px solid #ddd; border-radius: 8px;">
                 </iframe>
-                <div style="margin-top: 1rem; text-align: center;">
+                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                    <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                            style="padding: 0.75rem 1.5rem;">
+                        ← 返回
+                    </button>
                     <button class="btn btn-primary" onclick="LoginSystem.completeIframeLogin()"
-                            style="padding: 0.75rem 2rem; font-size: 1rem;">
+                            style="flex: 1; padding: 0.75rem 2rem; font-size: 1rem;">
                         ✓ 登录完成，保存Cookie
                     </button>
                 </div>

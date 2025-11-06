@@ -18,6 +18,7 @@ class RenderRequest(BaseModel):
     url: str
     timeout_ms: int = 30000
     wait_for: Optional[str] = None
+    use_cookies: bool = True  # 默认使用已保存的Cookie
 
 class CookieImportRequest(BaseModel):
     domain: str
@@ -104,7 +105,7 @@ if sys.platform == 'win32':
 
 from playwright.sync_api import sync_playwright
 
-def render_page(url, timeout_ms, wait_for, inject_js):
+def render_page(url, timeout_ms, wait_for, inject_js, cookies=None):
     try:
         with sync_playwright() as p:
             # 🔥 反反爬虫配置
@@ -117,7 +118,7 @@ def render_page(url, timeout_ms, wait_for, inject_js):
                     '--disable-setuid-sandbox',
                 ]
             )
-            
+
             context = browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -127,6 +128,14 @@ def render_page(url, timeout_ms, wait_for, inject_js):
                     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
                 }
             )
+
+            # 🔥 注入已保存的Cookie
+            if cookies and len(cookies) > 0:
+                try:
+                    context.add_cookies(cookies)
+                    print(f"[Render] 已注入 {len(cookies)} 个Cookie", file=sys.stderr)
+                except Exception as e:
+                    print(f"[Render] Cookie注入失败: {e}", file=sys.stderr)
             
             page = context.new_page()
             
@@ -308,10 +317,11 @@ footer img {
 if __name__ == "__main__":
     params = json.loads(sys.argv[1])
     result = render_page(
-        params["url"], 
-        params["timeout_ms"], 
+        params["url"],
+        params["timeout_ms"],
         params.get("wait_for"),
-        params["inject_js"]
+        params["inject_js"],
+        params.get("cookies")
     )
     # 🔥 确保使用ASCII编码输出，避免Windows编码问题
     output = json.dumps(result, ensure_ascii=True)
@@ -322,25 +332,38 @@ if __name__ == "__main__":
 @router.post("/render")
 async def render_page(req: RenderRequest):
     """通过子进程运行Playwright"""
-    
+    from urllib.parse import urlparse
+
     print(f"[API] Rendering URL: {req.url}")
-    
+
+    # 🔥 获取域名对应的Cookie
+    parsed = urlparse(req.url)
+    domain = parsed.netloc
+    cookies = None
+
+    if req.use_cookies and domain in _cookies_storage:
+        cookies = _cookies_storage[domain]
+        print(f"[API] 找到域名 {domain} 的 {len(cookies)} 个Cookie")
+    else:
+        print(f"[API] 域名 {domain} 没有保存的Cookie")
+
     temp_script = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode='w', 
-            suffix='.py', 
-            delete=False, 
+            mode='w',
+            suffix='.py',
+            delete=False,
             encoding='utf-8'
         ) as f:
             f.write(PLAYWRIGHT_TEMPLATE)
             temp_script = f.name
-        
+
         params = {
             "url": req.url,
             "timeout_ms": req.timeout_ms,
             "wait_for": req.wait_for,
-            "inject_js": INJECTED_SCRIPT
+            "inject_js": INJECTED_SCRIPT,
+            "cookies": cookies
         }
         
         params_json = json.dumps(params, ensure_ascii=True)
