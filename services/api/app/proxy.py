@@ -14,6 +14,24 @@ router = APIRouter(prefix="/api/proxy", tags=["proxy"])
 # Cookie存储字典（按域名存储）
 _cookies_storage: Dict[str, list] = {}
 
+def normalize_domain(domain: str) -> str:
+    """规范化域名：去掉www前缀和端口号，统一小写"""
+    if not domain:
+        return ""
+
+    # 去掉端口号
+    if ':' in domain:
+        domain = domain.split(':')[0]
+
+    # 转为小写
+    domain = domain.lower()
+
+    # 去掉www前缀
+    if domain.startswith('www.'):
+        domain = domain[4:]
+
+    return domain
+
 class RenderRequest(BaseModel):
     url: str
     timeout_ms: int = 30000
@@ -339,13 +357,14 @@ async def render_page(req: RenderRequest):
     # 🔥 获取域名对应的Cookie
     parsed = urlparse(req.url)
     domain = parsed.netloc
+    normalized_domain = normalize_domain(domain)
     cookies = None
 
-    if req.use_cookies and domain in _cookies_storage:
-        cookies = _cookies_storage[domain]
-        print(f"[API] 找到域名 {domain} 的 {len(cookies)} 个Cookie")
+    if req.use_cookies and normalized_domain in _cookies_storage:
+        cookies = _cookies_storage[normalized_domain]
+        print(f"[API] ✅ 找到域名 {normalized_domain} 的 {len(cookies)} 个Cookie (原始: {domain})")
     else:
-        print(f"[API] 域名 {domain} 没有保存的Cookie")
+        print(f"[API] ⚠️ 域名 {normalized_domain} 没有保存的Cookie (原始: {domain})")
 
     temp_script = None
     try:
@@ -483,11 +502,12 @@ async def test_proxy():
 async def import_cookies(req: CookieImportRequest):
     """导入Cookie"""
     try:
-        _cookies_storage[req.domain] = req.cookies
-        print(f"[Cookie] 已导入 {len(req.cookies)} 个Cookie到域名: {req.domain}")
+        normalized_domain = normalize_domain(req.domain)
+        _cookies_storage[normalized_domain] = req.cookies
+        print(f"[Cookie] 已导入 {len(req.cookies)} 个Cookie到域名: {normalized_domain} (原始: {req.domain})")
         return {
             "success": True,
-            "domain": req.domain,
+            "domain": normalized_domain,
             "count": len(req.cookies)
         }
     except Exception as e:
@@ -496,10 +516,11 @@ async def import_cookies(req: CookieImportRequest):
 @router.get("/cookies/export/{domain}")
 async def export_cookies(domain: str):
     """导出指定域名的Cookie"""
-    cookies = _cookies_storage.get(domain, [])
+    normalized_domain = normalize_domain(domain)
+    cookies = _cookies_storage.get(normalized_domain, [])
     return {
         "success": True,
-        "domain": domain,
+        "domain": normalized_domain,
         "cookies": cookies,
         "count": len(cookies)
     }
@@ -523,9 +544,10 @@ async def list_cookies():
 @router.delete("/cookies/{domain}")
 async def delete_cookies(domain: str):
     """删除指定域名的Cookie"""
-    if domain in _cookies_storage:
-        del _cookies_storage[domain]
-        return {"success": True, "message": f"已删除域名 {domain} 的Cookie"}
+    normalized_domain = normalize_domain(domain)
+    if normalized_domain in _cookies_storage:
+        del _cookies_storage[normalized_domain]
+        return {"success": True, "message": f"已删除域名 {normalized_domain} 的Cookie"}
     else:
         raise HTTPException(status_code=404, detail="域名不存在")
 
@@ -546,48 +568,49 @@ async def detect_login(req: LoginDetectRequest):
         # 解析URL
         parsed = urlparse(req.url)
         domain = parsed.netloc
+        normalized_domain = normalize_domain(domain)
 
         # 检测标志
         needs_login = False
         reasons = []
 
-        # 第2层：URL重定向检测
-        url_lower = req.url.lower()
-        if any(keyword in url_lower for keyword in ['login', 'signin', 'auth', 'account']):
+        # 第2层：URL路径检测（更严格，只检测路径部分）
+        url_path = parsed.path.lower()
+        if any(keyword in url_path for keyword in ['/login', '/signin', '/auth/', '/account/login']):
             needs_login = True
-            reasons.append("URL包含登录关键词")
+            reasons.append("URL路径包含登录关键词")
 
         # 如果提供了HTML，进行元素和文本检测
         if req.html:
             html_lower = req.html.lower()
 
-            # 第3层：页面元素检测
-            if any(keyword in html_lower for keyword in [
-                'type="password"',
-                'name="password"',
-                'id="password"',
-                '<form' and ('login' in html_lower or 'signin' in html_lower)
-            ]):
-                needs_login = True
-                reasons.append("检测到登录表单元素")
+            # 第3层：页面元素检测（更精确）
+            has_password_field = 'type="password"' in html_lower or "type='password'" in html_lower
+            has_login_form = '<form' in html_lower and ('action="/login"' in html_lower or 'action="/signin"' in html_lower)
 
-            # 第4层：多语言文本检测
+            if has_password_field and has_login_form:
+                needs_login = True
+                reasons.append("检测到登录表单（密码框+登录表单）")
+
+            # 第4层：多语言文本检测（更严格，要求在标题或显著位置）
             login_keywords = [
-                'please log in', 'please sign in', 'login required',
-                '请登录', '请先登录', '需要登录',
-                'ログイン', 'サインイン',
-                'se connecter', 'iniciar sesión'
+                'please log in to continue',
+                'please sign in to continue',
+                'login required',
+                'authentication required',
+                '请先登录后继续',
+                '需要登录后才能访问'
             ]
             if any(keyword in html_lower for keyword in login_keywords):
                 needs_login = True
-                reasons.append("检测到登录提示文本")
+                reasons.append("检测到登录要求提示")
 
         return {
             "success": True,
             "needs_login": needs_login,
-            "domain": domain,
+            "domain": normalized_domain,
             "reasons": reasons,
-            "has_cookies": domain in _cookies_storage
+            "has_cookies": normalized_domain in _cookies_storage
         }
 
     except Exception as e:
@@ -788,8 +811,9 @@ async def open_browser_login(req: RenderRequest):
 
     parsed = urlparse(req.url)
     domain = parsed.netloc
+    normalized_domain = normalize_domain(domain)
 
-    print(f"[Browser Login] 打开浏览器登录: {req.url}")
+    print(f"[Browser Login] 打开浏览器登录: {req.url} (域名: {normalized_domain})")
 
     temp_script = None
     try:
@@ -836,8 +860,11 @@ async def open_browser_login(req: RenderRequest):
         if output.get("success"):
             # 保存Cookie到内存
             cookies = output.get("cookies", [])
-            _cookies_storage[domain] = cookies
-            print(f"[Browser Login] ✅ 成功，保存了 {len(cookies)} 个Cookie")
+            _cookies_storage[normalized_domain] = cookies
+            print(f"[Browser Login] ✅ 成功，保存了 {len(cookies)} 个Cookie到域名: {normalized_domain}")
+
+            # 更新返回值中的domain
+            output["domain"] = normalized_domain
 
         return output
 
@@ -868,15 +895,15 @@ async def open_browser_login(req: RenderRequest):
 async def save_iframe_cookies(req: CookieImportRequest):
     """保存从iframe登录获取的Cookie"""
     try:
-        domain = req.domain
+        normalized_domain = normalize_domain(req.domain)
         cookies = req.cookies
 
-        _cookies_storage[domain] = cookies
-        print(f"[iframe Login] 保存了 {len(cookies)} 个Cookie到域名: {domain}")
+        _cookies_storage[normalized_domain] = cookies
+        print(f"[iframe Login] 保存了 {len(cookies)} 个Cookie到域名: {normalized_domain} (原始: {req.domain})")
 
         return {
             "success": True,
-            "domain": domain,
+            "domain": normalized_domain,
             "count": len(cookies),
             "message": "Cookie已保存"
         }
