@@ -568,6 +568,10 @@
             <button class="btn btn-primary" onclick="loadPage()">
                 开始提取
             </button>
+
+            <button class="btn" style="background: #FFA726; color: white;" onclick="showLoginModal()" title="登录管理">
+                🔐 登录
+            </button>
         </div>
     </header>
     
@@ -670,6 +674,7 @@
         </div>
     </div>
     
+    <script src="js/login.js"></script>
     <script>
         const API_BASE = 'http://127.0.0.1:8000';
         let currentMode = 'manual';
