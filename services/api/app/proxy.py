@@ -574,36 +574,36 @@ async def detect_login(req: LoginDetectRequest):
         needs_login = False
         reasons = []
 
-        # 第2层：URL路径检测（更严格，只检测路径部分）
-        url_path = parsed.path.lower()
-        if any(keyword in url_path for keyword in ['/login', '/signin', '/auth/', '/account/login']):
+        # 第2层：URL重定向检测
+        url_lower = req.url.lower()
+        if any(keyword in url_lower for keyword in ['login', 'signin', 'auth', 'account']):
             needs_login = True
-            reasons.append("URL路径包含登录关键词")
+            reasons.append("URL包含登录关键词")
 
         # 如果提供了HTML，进行元素和文本检测
         if req.html:
             html_lower = req.html.lower()
 
-            # 第3层：页面元素检测（更精确）
-            has_password_field = 'type="password"' in html_lower or "type='password'" in html_lower
-            has_login_form = '<form' in html_lower and ('action="/login"' in html_lower or 'action="/signin"' in html_lower)
-
-            if has_password_field and has_login_form:
+            # 第3层：页面元素检测
+            if any(keyword in html_lower for keyword in [
+                'type="password"',
+                'name="password"',
+                'id="password"',
+                '<form' and ('login' in html_lower or 'signin' in html_lower)
+            ]):
                 needs_login = True
-                reasons.append("检测到登录表单（密码框+登录表单）")
+                reasons.append("检测到登录表单元素")
 
-            # 第4层：多语言文本检测（更严格，要求在标题或显著位置）
+            # 第4层：多语言文本检测
             login_keywords = [
-                'please log in to continue',
-                'please sign in to continue',
-                'login required',
-                'authentication required',
-                '请先登录后继续',
-                '需要登录后才能访问'
+                'please log in', 'please sign in', 'login required',
+                '请登录', '请先登录', '需要登录',
+                'ログイン', 'サインイン',
+                'se connecter', 'iniciar sesión'
             ]
             if any(keyword in html_lower for keyword in login_keywords):
                 needs_login = True
-                reasons.append("检测到登录要求提示")
+                reasons.append("检测到登录提示文本")
 
         return {
             "success": True,
