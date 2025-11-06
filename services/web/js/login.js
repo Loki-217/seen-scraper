@@ -405,33 +405,51 @@ const LoginSystem = {
     }
 };
 
-// ==================== 页面加载时自动检测 ====================
-window.addEventListener('load', () => {
-    console.log('[Login] 页面加载完成，准备自动检测登录需求');
+// ==================== 自动检测函数 ====================
+LoginSystem.autoDetect = function() {
+    console.log('[Login] 触发自动检测');
 
-    // 延迟1秒后检测（确保页面完全加载）
-    setTimeout(() => {
-        const urlInput = document.getElementById('urlInput');
-        const currentUrl = urlInput ? urlInput.value.trim() : '';
+    const urlInput = document.getElementById('urlInput');
+    const currentUrl = urlInput ? urlInput.value.trim() : '';
 
-        if (currentUrl && currentUrl.startsWith('http')) {
-            console.log('[Login] 开始自动检测:', currentUrl);
+    if (!currentUrl || !currentUrl.startsWith('http')) {
+        console.log('[Login] URL无效，跳过检测:', currentUrl);
+        return;
+    }
 
-            // 尝试获取当前iframe的HTML内容（如果有）
-            let html = null;
-            const iframe = document.getElementById('previewFrame') || document.getElementById('smartPreviewFrame');
-            if (iframe && iframe.contentDocument) {
-                try {
-                    html = iframe.contentDocument.documentElement.outerHTML;
-                } catch (e) {
-                    console.warn('[Login] 无法获取iframe内容（可能是跨域）');
-                }
+    console.log('[Login] 开始自动检测:', currentUrl);
+
+    // 尝试获取当前iframe的HTML内容（如果有）
+    let html = null;
+    const iframe = document.getElementById('previewFrame') || document.getElementById('smartPreviewFrame');
+    if (iframe) {
+        try {
+            if (iframe.contentDocument) {
+                html = iframe.contentDocument.documentElement.outerHTML;
+                console.log('[Login] 成功获取iframe HTML，长度:', html.length);
+            } else if (iframe.srcdoc) {
+                html = iframe.srcdoc;
+                console.log('[Login] 使用srcdoc HTML，长度:', html.length);
             }
-
-            LoginSystem.detectLoginRequirement(currentUrl, html);
+        } catch (e) {
+            console.warn('[Login] 无法获取iframe内容（跨域限制）:', e.message);
         }
-    }, 1000);
-});
+    } else {
+        console.warn('[Login] 未找到iframe元素');
+    }
+
+    this.detectLoginRequirement(currentUrl, html);
+};
+
+// ==================== 初始化 ====================
+// 确保在DOM加载完成后执行
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('[Login] DOM加载完成');
+    });
+} else {
+    console.log('[Login] DOM已加载');
+}
 
 // 导出到全局
 window.LoginSystem = LoginSystem;

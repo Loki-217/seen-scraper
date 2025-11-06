@@ -142,7 +142,15 @@ async function loadManualMode(url) {
         
         const data = await response.json();
         document.getElementById('previewFrame').srcdoc = data.html;
-        
+
+        // 延迟1秒后自动检测登录需求
+        setTimeout(() => {
+            if (window.LoginSystem && typeof window.LoginSystem.autoDetect === 'function') {
+                console.log('[Manual Mode] 触发登录自动检测');
+                window.LoginSystem.autoDetect();
+            }
+        }, 1000);
+
     } catch (error) {
         const errorMsg = error.message.toLowerCase();
         if (errorMsg.includes('blocked') || 
@@ -312,7 +320,15 @@ async function loadSmartMode(url) {
         if (analysisResult.success) {
             console.log('[SmartMode] 显示分析结果, 字段数:', analysisResult.suggestions?.length);
             displaySmartResults(analysisResult);
-            
+
+            // 延迟1秒后自动检测登录需求
+            setTimeout(() => {
+                if (window.LoginSystem && typeof window.LoginSystem.autoDetect === 'function') {
+                    console.log('[Smart Mode] 触发登录自动检测');
+                    window.LoginSystem.autoDetect();
+                }
+            }, 1000);
+
             if (analysisResult.config_used) {
                 const configInfo = [
                     analysisResult.config_used.auto_scroll ? '✅ 自动滚动' : '❌ 自动滚动',
