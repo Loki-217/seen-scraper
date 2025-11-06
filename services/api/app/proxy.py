@@ -155,31 +155,57 @@ def render_page(url, timeout_ms, wait_for, inject_js, cookies=None):
                     parsed_url = urlparse(url)
                     target_domain = parsed_url.netloc
 
+                    # 规范化目标域名（去掉www）
+                    normalized_target = target_domain.lower()
+                    if normalized_target.startswith('www.'):
+                        normalized_target = normalized_target[4:]
+
                     fixed_cookies = []
                     for cookie in cookies:
                         cookie_copy = cookie.copy()
 
-                        # 如果Cookie的domain为空或与目标domain不匹配，设置为目标domain
-                        if not cookie_copy.get('domain'):
-                            cookie_copy['domain'] = target_domain
-                        else:
-                            # 确保domain以点开头（用于子域名共享）
-                            cookie_domain = cookie_copy['domain']
-                            if not cookie_domain.startswith('.'):
-                                cookie_copy['domain'] = '.' + cookie_domain
+                        # 确保有name和value（必需字段）
+                        if not cookie_copy.get('name') or not cookie_copy.get('value'):
+                            print(f"[Render] ⚠️ 跳过无效Cookie: {cookie_copy}", file=sys.stderr)
+                            continue
 
-                        # 确保有url字段（Playwright可能需要）
-                        if 'url' not in cookie_copy:
-                            cookie_copy['url'] = url
+                        # 处理domain字段
+                        original_domain = cookie_copy.get('domain', '')
+
+                        if original_domain:
+                            # 规范化Cookie的domain
+                            cookie_domain = original_domain.lower()
+                            if cookie_domain.startswith('www.'):
+                                cookie_domain = cookie_domain[4:]
+
+                            # 确保domain以点开头（用于子域名共享）
+                            if not cookie_domain.startswith('.'):
+                                cookie_domain = '.' + cookie_domain
+
+                            cookie_copy['domain'] = cookie_domain
+                        else:
+                            # 如果Cookie没有domain，设置为规范化的目标域名（带点）
+                            cookie_copy['domain'] = '.' + normalized_target
+
+                        # 移除url字段（避免和domain冲突）
+                        if 'url' in cookie_copy:
+                            del cookie_copy['url']
+
+                        # 确保有必需的字段
+                        if 'path' not in cookie_copy:
+                            cookie_copy['path'] = '/'
 
                         fixed_cookies.append(cookie_copy)
 
-                    context.add_cookies(fixed_cookies)
-                    print(f"[Render] ✅ 已注入 {len(fixed_cookies)} 个Cookie", file=sys.stderr)
-
-                    # 打印第一个Cookie的domain用于调试
                     if fixed_cookies:
-                        print(f"[Render] Cookie示例 - domain: {fixed_cookies[0].get('domain')}, name: {fixed_cookies[0].get('name')}", file=sys.stderr)
+                        context.add_cookies(fixed_cookies)
+                        print(f"[Render] ✅ 已注入 {len(fixed_cookies)} 个Cookie", file=sys.stderr)
+
+                        # 打印前3个Cookie用于调试
+                        for i, cookie in enumerate(fixed_cookies[:3]):
+                            print(f"[Render] Cookie[{i}] - name: {cookie.get('name')}, domain: {cookie.get('domain')}, path: {cookie.get('path')}", file=sys.stderr)
+                    else:
+                        print(f"[Render] ⚠️ 没有有效的Cookie可以注入", file=sys.stderr)
 
                 except Exception as e:
                     print(f"[Render] ❌ Cookie注入失败: {e}", file=sys.stderr)
