@@ -141,7 +141,26 @@ async function loadManualMode(url) {
         }
         
         const data = await response.json();
-        document.getElementById('previewFrame').srcdoc = data.html;
+
+        // 🔥 使用Blob URL代替srcdoc，避免origin=null的安全问题
+        const iframe = document.getElementById('previewFrame');
+        try {
+            const blob = new Blob([data.html], { type: 'text/html; charset=utf-8' });
+            const blobUrl = URL.createObjectURL(blob);
+
+            // 清理旧的Blob URL
+            if (iframe.dataset.blobUrl) {
+                URL.revokeObjectURL(iframe.dataset.blobUrl);
+            }
+
+            iframe.src = blobUrl;
+            iframe.dataset.blobUrl = blobUrl;
+
+            console.log('[Manual Mode] 使用Blob URL加载页面');
+        } catch (error) {
+            console.error('[Manual Mode] Blob URL创建失败，降级到srcdoc:', error);
+            iframe.srcdoc = data.html;
+        }
 
         // 延迟1秒后自动检测登录需求
         setTimeout(() => {
