@@ -670,6 +670,80 @@
         </div>
     </div>
     
+    <!-- 登录弹窗 -->
+    <div class="login-modal" id="loginModal">
+        <div class="login-modal-content">
+            <div class="login-modal-header">
+                <h2>
+                    <span class="icon">🔐</span>
+                    需要登录
+                </h2>
+                <button class="login-modal-close" onclick="closeLoginModal()">✕</button>
+            </div>
+
+            <div class="login-modal-body">
+                <!-- 检测原因 -->
+                <div class="login-reason">
+                    <h4>⚠️ 检测到以下情况:</h4>
+                    <ul id="loginReasons">
+                        <li>页面需要登录才能访问</li>
+                    </ul>
+                </div>
+
+                <!-- 登录选项 -->
+                <div class="login-options" id="loginOptions">
+                    <div class="login-option recommended" onclick="loginWithIframe()">
+                        <div class="option-icon">🖼️</div>
+                        <div class="option-content">
+                            <div class="option-title">iframe 内嵌登录</div>
+                            <div class="option-description">在弹窗中直接登录,方便快捷</div>
+                        </div>
+                    </div>
+
+                    <div class="login-option" onclick="loginWithBrowser()">
+                        <div class="option-icon">🌐</div>
+                        <div class="option-content">
+                            <div class="option-title">浏览器窗口登录</div>
+                            <div class="option-description">打开独立浏览器,支持复杂验证</div>
+                        </div>
+                    </div>
+
+                    <div class="login-option" onclick="showCookieImport()">
+                        <div class="option-icon">📋</div>
+                        <div class="option-content">
+                            <div class="option-title">手动导入 Cookie</div>
+                            <div class="option-description">已有Cookie? 直接粘贴导入</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- iframe登录容器 -->
+                <div class="iframe-login-container" id="iframeLoginContainer">
+                    <!-- 动态填充 -->
+                </div>
+
+                <!-- Cookie导入区域 -->
+                <div class="cookie-import-area" id="cookieImportArea">
+                    <label>粘贴Cookie (JSON格式):</label>
+                    <textarea
+                        id="cookieImportTextarea"
+                        class="cookie-import-textarea"
+                        placeholder='[{"name":"session","value":"abc123","domain":".example.com"}]'
+                    ></textarea>
+                    <div class="cookie-import-buttons">
+                        <button class="login-btn" onclick="backToLoginOptions()">返回</button>
+                        <button class="login-btn login-btn-primary" onclick="importCookies()">导入</button>
+                    </div>
+                </div>
+
+                <!-- 登录进度 -->
+                <div class="login-progress" id="loginProgress">
+                    <!-- 动态填充 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = 'http://127.0.0.1:8000';
         let currentMode = 'manual';

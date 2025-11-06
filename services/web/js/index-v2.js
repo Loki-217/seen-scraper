@@ -1385,6 +1385,312 @@ function suggestFieldNameLocal(element) {
     return `字段${configuredFields.length + 1}`;
 }
 
+// ==================== 登录系统 ====================
+
+let currentDetectionResult = null;
+
+// 自动检测登录需求
+async function detectLoginRequirement(url) {
+    console.log('[Login] 检测是否需要登录:', url);
+
+    try {
+        const response = await fetch(`${API_BASE}/api/proxy/detect-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+
+        if (!response.ok) {
+            console.warn('[Login] 检测失败');
+            return;
+        }
+
+        const result = await response.json();
+        currentDetectionResult = result;
+
+        console.log('[Login] 检测结果:', result.detection);
+
+        if (result.detection && result.detection.needs_login) {
+            console.log('[Login] ⚠️ 需要登录, 原因:', result.detection.reasons);
+            showLoginModal(result);
+        } else {
+            console.log('[Login] ✅ 无需登录');
+        }
+
+    } catch (error) {
+        console.error('[Login] 检测异常:', error);
+    }
+}
+
+// 显示登录弹窗
+function showLoginModal(detectionResult) {
+    const modal = document.getElementById('loginModal');
+    if (!modal) {
+        console.error('[Login] 找不到登录弹窗元素');
+        return;
+    }
+
+    // 填充检测原因
+    const reasonsList = document.getElementById('loginReasons');
+    if (reasonsList && detectionResult.detection.reasons) {
+        reasonsList.innerHTML = detectionResult.detection.reasons
+            .map(reason => `<li>${reason}</li>`)
+            .join('');
+    }
+
+    modal.classList.add('active');
+}
+
+// 关闭登录弹窗
+function closeLoginModal() {
+    const modal = document.getElementById('loginModal');
+    if (modal) {
+        modal.classList.remove('active');
+
+        // 清理iframe和其他容器
+        const iframeContainer = document.getElementById('iframeLoginContainer');
+        if (iframeContainer) {
+            iframeContainer.classList.remove('active');
+            iframeContainer.innerHTML = '';
+        }
+
+        const cookieArea = document.getElementById('cookieImportArea');
+        if (cookieArea) {
+            cookieArea.classList.remove('active');
+        }
+
+        const progressArea = document.getElementById('loginProgress');
+        if (progressArea) {
+            progressArea.classList.remove('active');
+        }
+    }
+}
+
+// iframe登录
+async function loginWithIframe() {
+    if (!currentUrl) {
+        alert('请先输入网页地址');
+        return;
+    }
+
+    console.log('[Login] 使用iframe登录:', currentUrl);
+
+    // 隐藏登录选项,显示iframe容器
+    document.getElementById('loginOptions').style.display = 'none';
+    const iframeContainer = document.getElementById('iframeLoginContainer');
+    iframeContainer.classList.add('active');
+
+    // 加载iframe
+    const iframeUrl = `${API_BASE}/api/proxy/login-in-iframe?url=${encodeURIComponent(currentUrl)}`;
+    iframeContainer.innerHTML = `
+        <div class="iframe-login-header">
+            <h4 style="margin: 0;">🔐 请在下方完成登录</h4>
+            <button onclick="backToLoginOptions()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;">
+                返回
+            </button>
+        </div>
+        <div class="iframe-login-body">
+            <iframe src="${iframeUrl}"></iframe>
+        </div>
+        <div class="iframe-login-footer">
+            <span class="iframe-login-tip">完成登录后,点击右侧按钮保存Cookie</span>
+            <button class="login-btn login-btn-primary" onclick="completeIframeLogin()">
+                ✓ 登录完成
+            </button>
+        </div>
+    `;
+}
+
+// 完成iframe登录
+async function completeIframeLogin() {
+    console.log('[Login] 用户确认iframe登录完成');
+
+    // 显示进度
+    const progressArea = document.getElementById('loginProgress');
+    progressArea.classList.add('active');
+    progressArea.innerHTML = `
+        <div class="spinner"></div>
+        <p>正在保存Cookie...</p>
+    `;
+
+    // 等待2秒确保Cookie已写入
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // 提示用户
+    showToast('✅ Cookie已保存,正在重新加载页面...', 'success');
+
+    // 延迟1秒后重新加载页面
+    setTimeout(() => {
+        closeLoginModal();
+        loadPage();
+    }, 1000);
+}
+
+// 返回登录选项
+function backToLoginOptions() {
+    document.getElementById('loginOptions').style.display = 'flex';
+    document.getElementById('iframeLoginContainer').classList.remove('active');
+    document.getElementById('cookieImportArea').classList.remove('active');
+}
+
+// 浏览器窗口登录
+async function loginWithBrowser() {
+    if (!currentUrl) {
+        alert('请先输入网页地址');
+        return;
+    }
+
+    console.log('[Login] 使用浏览器窗口登录:', currentUrl);
+
+    // 显示进度
+    document.getElementById('loginOptions').style.display = 'none';
+    const progressArea = document.getElementById('loginProgress');
+    progressArea.classList.add('active');
+    progressArea.innerHTML = `
+        <div class="spinner"></div>
+        <p>正在打开浏览器窗口...</p>
+        <p style="font-size: 0.9rem; opacity: 0.9; margin-top: 1rem;">
+            请在弹出的浏览器中完成登录,<br>
+            然后点击页面顶部的"我已完成登录"按钮
+        </p>
+    `;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/proxy/login-browser`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: currentUrl })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail?.error || '浏览器登录失败');
+        }
+
+        const result = await response.json();
+
+        console.log('[Login] 浏览器登录成功:', result);
+
+        // 显示成功提示
+        progressArea.innerHTML = `
+            <div class="login-success active">
+                <div class="success-icon">✅</div>
+                <p>登录成功!</p>
+                <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+                    已保存 ${result.cookie_count} 个Cookie
+                </p>
+            </div>
+        `;
+
+        showToast('✅ 登录成功,正在重新加载页面...', 'success');
+
+        // 2秒后重新加载页面
+        setTimeout(() => {
+            closeLoginModal();
+            loadPage();
+        }, 2000);
+
+    } catch (error) {
+        console.error('[Login] 浏览器登录失败:', error);
+
+        progressArea.innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">❌</div>
+                <p style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">
+                    登录失败
+                </p>
+                <p style="font-size: 0.9rem; opacity: 0.9;">
+                    ${error.message}
+                </p>
+                <button class="login-btn login-btn-primary" onclick="backToLoginOptions()" style="margin-top: 1.5rem; width: auto; padding: 0.75rem 2rem;">
+                    重试
+                </button>
+            </div>
+        `;
+    }
+}
+
+// Cookie导入
+function showCookieImport() {
+    console.log('[Login] 显示Cookie导入界面');
+
+    document.getElementById('loginOptions').style.display = 'none';
+    const cookieArea = document.getElementById('cookieImportArea');
+    cookieArea.classList.add('active');
+}
+
+// 导入Cookie
+async function importCookies() {
+    const textarea = document.getElementById('cookieImportTextarea');
+    const cookieText = textarea.value.trim();
+
+    if (!cookieText) {
+        alert('请粘贴Cookie内容');
+        return;
+    }
+
+    console.log('[Login] 导入Cookie...');
+
+    try {
+        // 解析Cookie(支持JSON格式)
+        let cookies;
+        try {
+            cookies = JSON.parse(cookieText);
+        } catch (e) {
+            // 如果不是JSON,尝试解析为key=value格式
+            alert('Cookie格式错误,请提供JSON格式的Cookie');
+            return;
+        }
+
+        // 获取域名
+        const parsed = new URL(currentUrl);
+        const domain = parsed.hostname;
+
+        // 调用后端API导入Cookie
+        const response = await fetch(`${API_BASE}/api/proxy/cookies/import`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                domain: domain,
+                cookies: Array.isArray(cookies) ? cookies : [cookies]
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('导入Cookie失败');
+        }
+
+        const result = await response.json();
+
+        console.log('[Login] Cookie导入成功:', result);
+
+        showToast(`✅ 成功导入 ${result.count} 个Cookie`, 'success');
+
+        // 延迟1秒后重新加载页面
+        setTimeout(() => {
+            closeLoginModal();
+            loadPage();
+        }, 1000);
+
+    } catch (error) {
+        console.error('[Login] 导入Cookie失败:', error);
+        alert('导入Cookie失败: ' + error.message);
+    }
+}
+
+// 修改loadPage函数,在加载成功后自动检测登录
+const originalLoadPage = loadPage;
+window.loadPage = async function() {
+    await originalLoadPage();
+
+    // 延迟1秒后检测登录需求
+    if (currentUrl) {
+        setTimeout(() => {
+            detectLoginRequirement(currentUrl);
+        }, 1000);
+    }
+};
+
 // ==================== 初始化 ====================
 
 document.addEventListener('DOMContentLoaded', () => {
