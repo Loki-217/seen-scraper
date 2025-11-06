@@ -204,6 +204,13 @@ def render_page(url, timeout_ms, wait_for, inject_js, cookies=None):
                         # 打印前3个Cookie用于调试
                         for i, cookie in enumerate(fixed_cookies[:3]):
                             print(f"[Render] Cookie[{i}] - name: {cookie.get('name')}, domain: {cookie.get('domain')}, path: {cookie.get('path')}", file=sys.stderr)
+
+                        # 🔍 诊断：检查关键Cookie
+                        session_cookies = [c for c in fixed_cookies if c.get('name', '').lower() in ['phpsessid', 'sessionid', 'session']]
+                        if session_cookies:
+                            print(f"[Render] 🔑 发现会话Cookie: {[c.get('name') for c in session_cookies]}", file=sys.stderr)
+                            for sc in session_cookies:
+                                print(f"[Render]   - {sc.get('name')}: domain={sc.get('domain')}, secure={sc.get('secure')}, httpOnly={sc.get('httpOnly')}", file=sys.stderr)
                     else:
                         print(f"[Render] ⚠️ 没有有效的Cookie可以注入", file=sys.stderr)
 
@@ -257,6 +264,28 @@ def render_page(url, timeout_ms, wait_for, inject_js, cookies=None):
                 page.goto(url, wait_until="load", timeout=timeout_ms)
                 page.wait_for_timeout(2000)
                 print("[Render] Page loaded", file=sys.stderr)
+
+                # 🔍 诊断：检查是否登录成功（查找常见的登录标识）
+                try:
+                    login_indicators = page.evaluate('''() => {
+                        const indicators = {
+                            has_logout_button: !!document.querySelector('a[href*="logout"], button[class*="logout"], a[class*="logout"]'),
+                            has_account_menu: !!document.querySelector('[class*="account"], [class*="user-menu"], [id*="account"]'),
+                            has_welcome_text: document.body.innerText.toLowerCase().includes('welcome') || document.body.innerText.includes('欢迎'),
+                            has_login_form: !!document.querySelector('form[action*="login"], input[type="password"]'),
+                            page_url: window.location.href,
+                            page_title: document.title
+                        };
+                        return indicators;
+                    }''')
+                    print(f"[Render] 🔍 登录状态检查:", file=sys.stderr)
+                    print(f"[Render]   - 登出按钮: {login_indicators.get('has_logout_button')}", file=sys.stderr)
+                    print(f"[Render]   - 账户菜单: {login_indicators.get('has_account_menu')}", file=sys.stderr)
+                    print(f"[Render]   - 欢迎文本: {login_indicators.get('has_welcome_text')}", file=sys.stderr)
+                    print(f"[Render]   - 登录表单: {login_indicators.get('has_login_form')}", file=sys.stderr)
+                    print(f"[Render]   - 页面标题: {login_indicators.get('page_title')}", file=sys.stderr)
+                except Exception as diag_e:
+                    print(f"[Render] ⚠️ 登录状态检查失败: {diag_e}", file=sys.stderr)
                 
                 # 🔥 自动滚动预加载
                 try:
@@ -596,6 +625,48 @@ async def list_cookies():
         "success": True,
         "domains": domains,
         "total": len(domains)
+    }
+
+@router.get("/cookies/inspect/{domain}")
+async def inspect_cookies(domain: str):
+    """详细检查指定域名的Cookie（用于诊断）"""
+    normalized_domain = normalize_domain(domain)
+    cookies = _cookies_storage.get(normalized_domain, [])
+
+    # 分析Cookie属性
+    cookie_details = []
+    for cookie in cookies:
+        detail = {
+            "name": cookie.get("name"),
+            "value": cookie.get("value", "")[:50] + ("..." if len(cookie.get("value", "")) > 50 else ""),  # 截断显示
+            "domain": cookie.get("domain"),
+            "path": cookie.get("path"),
+            "secure": cookie.get("secure", False),
+            "httpOnly": cookie.get("httpOnly", False),
+            "sameSite": cookie.get("sameSite", "None"),
+            "expires": cookie.get("expires"),
+            "value_length": len(cookie.get("value", ""))
+        }
+        cookie_details.append(detail)
+
+    # 统计关键Cookie
+    session_cookies = [c for c in cookies if c.get("name", "").lower() in ["phpsessid", "sessionid", "session", "jsessionid"]]
+    auth_cookies = [c for c in cookies if "auth" in c.get("name", "").lower() or "token" in c.get("name", "").lower()]
+
+    return {
+        "success": True,
+        "domain": normalized_domain,
+        "original_domain": domain,
+        "total_cookies": len(cookies),
+        "cookie_details": cookie_details,
+        "session_cookies": len(session_cookies),
+        "auth_cookies": len(auth_cookies),
+        "analysis": {
+            "has_session": len(session_cookies) > 0,
+            "has_auth": len(auth_cookies) > 0,
+            "secure_only_count": len([c for c in cookies if c.get("secure", False)]),
+            "httponly_count": len([c for c in cookies if c.get("httpOnly", False)])
+        }
     }
 
 @router.delete("/cookies/{domain}")
