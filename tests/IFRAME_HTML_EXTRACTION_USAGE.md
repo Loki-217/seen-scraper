@@ -212,6 +212,7 @@ open tests/output/iframe_html/latest.html
 # Windows
 start tests/output/iframe_html/latest.html
 start tests/output/iframe_html/20251104_000239_unsplash.com_.clean.html
+它自己的console.log(Node.prototype.addEventListener.toString());
 
 # 或者使用浏览器直接打开
 file:///home/user/seen-scraper/tests/output/iframe_html/latest.html
