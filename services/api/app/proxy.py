@@ -169,23 +169,9 @@ def render_page(url, timeout_ms, wait_for, inject_js, cookies=None):
                             print(f"[Render] ⚠️ 跳过无效Cookie: {cookie_copy}", file=sys.stderr)
                             continue
 
-                        # 处理domain字段
-                        original_domain = cookie_copy.get('domain', '')
-
-                        if original_domain:
-                            # 规范化Cookie的domain
-                            cookie_domain = original_domain.lower()
-                            if cookie_domain.startswith('www.'):
-                                cookie_domain = cookie_domain[4:]
-
-                            # 确保domain以点开头（用于子域名共享）
-                            if not cookie_domain.startswith('.'):
-                                cookie_domain = '.' + cookie_domain
-
-                            cookie_copy['domain'] = cookie_domain
-                        else:
-                            # 如果Cookie没有domain，设置为规范化的目标域名（带点）
-                            cookie_copy['domain'] = '.' + normalized_target
+                        # 🔥 关键修复：保持Cookie的domain完全不变！
+                        # 不要修改domain，否则会导致会话验证失败
+                        # 网站设置的domain格式（如www.tvmaze.com）是有意义的，不应篡改
 
                         # 移除url字段（避免和domain冲突）
                         if 'url' in cookie_copy:
@@ -194,6 +180,12 @@ def render_page(url, timeout_ms, wait_for, inject_js, cookies=None):
                         # 确保有必需的字段
                         if 'path' not in cookie_copy:
                             cookie_copy['path'] = '/'
+
+                        # 如果Cookie没有domain字段，才设置默认值
+                        if 'domain' not in cookie_copy or not cookie_copy['domain']:
+                            # 使用目标URL的域名（不修改，保持原样）
+                            from urllib.parse import urlparse
+                            cookie_copy['domain'] = urlparse(url).netloc
 
                         fixed_cookies.append(cookie_copy)
 
