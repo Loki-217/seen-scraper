@@ -1094,9 +1094,15 @@ def login_in_browser(url, timeout_ms, stored_cookies):
                     "error": f"Failed to load page: {str(e)}"
                 }
 
-            # 注入提示信息
+            # 记录初始Cookie数量
+            initial_cookies = context.cookies()
+            initial_cookie_count = len(initial_cookies)
+            print(f"[Browser] Initial cookies: {initial_cookie_count}", file=sys.stderr)
+
+            # 注入提示信息和确认按钮
             page.evaluate('''
                 () => {
+                    // 创建横幅
                     const banner = document.createElement('div');
                     banner.style.cssText = `
                         position: fixed;
@@ -1111,30 +1117,95 @@ def login_in_browser(url, timeout_ms, stored_cookies):
                         font-weight: bold;
                         z-index: 999999;
                         box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 20px;
                     `;
-                    banner.innerHTML = '🔐 SeenFetch - 请在此窗口完成登录，登录完成后会自动保存Cookie';
+
+                    const text = document.createElement('span');
+                    text.textContent = '🔐 SeenFetch - 请在此窗口完成登录';
+
+                    const button = document.createElement('button');
+                    button.id = 'seenfetch-login-complete';
+                    button.textContent = '✅ 我已完成登录';
+                    button.style.cssText = `
+                        background: white;
+                        color: #667eea;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 8px;
+                        font-size: 14px;
+                        font-weight: bold;
+                        cursor: pointer;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                    `;
+                    button.onmouseover = () => button.style.background = '#f0f0f0';
+                    button.onmouseout = () => button.style.background = 'white';
+
+                    banner.appendChild(text);
+                    banner.appendChild(button);
                     document.body.insertBefore(banner, document.body.firstChild);
                 }
             ''')
 
-            # 监控URL变化，检测登录是否完成
+            # 监控登录完成
             initial_url = page.url
             start_time = time.time()
 
             print("[Browser] Monitoring login progress...", file=sys.stderr)
-            print("[Browser] Please complete login in the browser window", file=sys.stderr)
+            print("[Browser] Please complete login and click the button", file=sys.stderr)
             print("[Browser] Initial URL:", initial_url, file=sys.stderr)
 
-            # 等待用户登录（检测URL变化或超时）
+            # 等待用户登录（检测Cookie变化或手动确认）
             login_detected = False
             while time.time() - start_time < timeout_ms / 1000:
-                current_url = page.url
+                # 检查用户是否点击了"完成登录"按钮
+                try:
+                    button_clicked = page.evaluate('''
+                        () => {
+                            const btn = document.getElementById('seenfetch-login-complete');
+                            if (btn && btn.dataset.clicked) {
+                                return true;
+                            }
+                            if (btn) {
+                                btn.onclick = () => {
+                                    btn.dataset.clicked = 'true';
+                                    btn.textContent = '✅ 正在保存...';
+                                    btn.disabled = true;
+                                };
+                            }
+                            return false;
+                        }
+                    ''')
 
-                # 如果URL不再包含login/signin，认为登录可能完成
-                if ('login' in initial_url.lower() or 'signin' in initial_url.lower()) and \
-                   ('login' not in current_url.lower() and 'signin' not in current_url.lower()):
+                    if button_clicked:
+                        login_detected = True
+                        print("[Browser] User confirmed login complete!", file=sys.stderr)
+                        break
+                except:
+                    pass
+
+                # 检查Cookie数量是否增加（说明可能登录成功）
+                current_cookies = context.cookies()
+                current_cookie_count = len(current_cookies)
+
+                if current_cookie_count > initial_cookie_count + 3:
                     login_detected = True
-                    print(f"[Browser] Login detected! URL changed to: {current_url}", file=sys.stderr)
+                    print(f"[Browser] Cookie increase detected! {initial_cookie_count} -> {current_cookie_count}", file=sys.stderr)
+                    # 更新按钮状态
+                    try:
+                        page.evaluate('''
+                            () => {
+                                const btn = document.getElementById('seenfetch-login-complete');
+                                if (btn) {
+                                    btn.textContent = '✅ 检测到登录，点击完成';
+                                    btn.style.animation = 'pulse 1s infinite';
+                                }
+                            }
+                        ''')
+                    except:
+                        pass
                     break
 
                 time.sleep(1)
