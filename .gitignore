@@ -21,3 +21,8 @@ seen.db
 # IDE
 .vscode/
 .idea/
+
+# Logs
+*.log
+server.log
+nohup.out
