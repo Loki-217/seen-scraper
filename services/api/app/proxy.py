@@ -705,14 +705,20 @@ async def detect_login(req: LoginDetectRequest):
             html_lower = req.html.lower()
 
             # 第3层：页面元素检测
+            # 检查密码输入框
             if any(keyword in html_lower for keyword in [
                 'type="password"',
                 'name="password"',
-                'id="password"',
-                '<form' and ('login' in html_lower or 'signin' in html_lower)
+                'id="password"'
             ]):
                 needs_login = True
                 reasons.append("检测到登录表单元素")
+
+            # 检查登录表单（单独检查，避免布尔值混入列表）
+            if '<form' in html_lower and ('login' in html_lower or 'signin' in html_lower):
+                if not needs_login:  # 避免重复添加reason
+                    needs_login = True
+                    reasons.append("检测到登录表单元素")
 
             # 第4层：多语言文本检测
             login_keywords = [
