@@ -9,6 +9,9 @@ import sys
 import tempfile
 import os
 
+# 导入统一Cookie管理器
+from .cookie_manager import cookie_manager
+
 router = APIRouter(prefix="/api/proxy", tags=["proxy"])
 
 # Cookie存储字典（按域名存储）
@@ -670,6 +673,159 @@ async def delete_cookies(domain: str):
         return {"success": True, "message": f"已删除域名 {normalized_domain} 的Cookie"}
     else:
         raise HTTPException(status_code=404, detail="域名不存在")
+
+# ==================== 自动Cookie导入API（browser-cookie3）====================
+
+@router.get("/cookies/auto-import-chrome/{domain}")
+async def auto_import_from_chrome(domain: str):
+    """
+    🚀 自动从Chrome浏览器读取Cookie（无需手动导出）
+
+    使用browser-cookie3库自动读取Chrome的Cookie数据库
+    """
+    try:
+        print(f"[API] 自动导入Chrome Cookie: {domain}")
+        cookies = cookie_manager.import_from_chrome(domain)
+
+        if not cookies:
+            return {
+                "success": False,
+                "error": f"未找到域名 {domain} 的Cookie，请确保已在Chrome中登录该网站"
+            }
+
+        # 保存到内存
+        normalized_domain = normalize_domain(domain)
+        _cookies_storage[normalized_domain] = cookies
+
+        # 获取摘要信息
+        summary = cookie_manager.get_cookie_summary(cookies)
+
+        print(f"[API] ✅ 自动从Chrome导入了 {len(cookies)} 个Cookie")
+
+        return {
+            "success": True,
+            "domain": normalized_domain,
+            "count": len(cookies),
+            "method": "Chrome Auto Import",
+            "summary": summary,
+            "message": f"成功从Chrome自动导入 {len(cookies)} 个Cookie"
+        }
+    except Exception as e:
+        print(f"[API] ❌ Chrome自动导入失败: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "hint": "请确保Chrome浏览器已安装且已在该网站登录"
+        }
+
+@router.get("/cookies/auto-import-firefox/{domain}")
+async def auto_import_from_firefox(domain: str):
+    """🦊 自动从Firefox浏览器读取Cookie"""
+    try:
+        print(f"[API] 自动导入Firefox Cookie: {domain}")
+        cookies = cookie_manager.import_from_firefox(domain)
+
+        if not cookies:
+            return {
+                "success": False,
+                "error": f"未找到域名 {domain} 的Cookie"
+            }
+
+        normalized_domain = normalize_domain(domain)
+        _cookies_storage[normalized_domain] = cookies
+
+        summary = cookie_manager.get_cookie_summary(cookies)
+
+        print(f"[API] ✅ 自动从Firefox导入了 {len(cookies)} 个Cookie")
+
+        return {
+            "success": True,
+            "domain": normalized_domain,
+            "count": len(cookies),
+            "method": "Firefox Auto Import",
+            "summary": summary
+        }
+    except Exception as e:
+        print(f"[API] ❌ Firefox自动导入失败: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/cookies/auto-import-edge/{domain}")
+async def auto_import_from_edge(domain: str):
+    """🌐 自动从Edge浏览器读取Cookie"""
+    try:
+        print(f"[API] 自动导入Edge Cookie: {domain}")
+        cookies = cookie_manager.import_from_edge(domain)
+
+        if not cookies:
+            return {
+                "success": False,
+                "error": f"未找到域名 {domain} 的Cookie"
+            }
+
+        normalized_domain = normalize_domain(domain)
+        _cookies_storage[normalized_domain] = cookies
+
+        summary = cookie_manager.get_cookie_summary(cookies)
+
+        print(f"[API] ✅ 自动从Edge导入了 {len(cookies)} 个Cookie")
+
+        return {
+            "success": True,
+            "domain": normalized_domain,
+            "count": len(cookies),
+            "method": "Edge Auto Import",
+            "summary": summary
+        }
+    except Exception as e:
+        print(f"[API] ❌ Edge自动导入失败: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/cookies/auto-import-all/{domain}")
+async def auto_import_from_all_browsers(domain: str):
+    """🔍 尝试从所有浏览器自动读取Cookie，返回找到Cookie最多的"""
+    try:
+        print(f"[API] 尝试从所有浏览器导入Cookie: {domain}")
+        results = cookie_manager.import_from_all_browsers(domain)
+
+        # 找到Cookie最多的浏览器
+        best_browser = None
+        max_count = 0
+        best_cookies = []
+
+        for browser, cookies in results.items():
+            if len(cookies) > max_count:
+                max_count = len(cookies)
+                best_browser = browser
+                best_cookies = cookies
+
+        if max_count == 0:
+            return {
+                "success": False,
+                "error": "所有浏览器都未找到该域名的Cookie",
+                "attempts": {k: len(v) for k, v in results.items()}
+            }
+
+        # 保存最好的结果
+        normalized_domain = normalize_domain(domain)
+        _cookies_storage[normalized_domain] = best_cookies
+
+        summary = cookie_manager.get_cookie_summary(best_cookies)
+
+        print(f"[API] ✅ 从 {best_browser} 导入了 {max_count} 个Cookie")
+
+        return {
+            "success": True,
+            "domain": normalized_domain,
+            "count": max_count,
+            "method": f"{best_browser.capitalize()} Auto Import",
+            "best_browser": best_browser,
+            "attempts": {k: len(v) for k, v in results.items()},
+            "summary": summary,
+            "message": f"成功从 {best_browser} 自动导入 {max_count} 个Cookie"
+        }
+    except Exception as e:
+        print(f"[API] ❌ 自动导入失败: {e}")
+        return {"success": False, "error": str(e)}
 
 # ==================== 登录检测API ====================
 

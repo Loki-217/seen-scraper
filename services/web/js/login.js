@@ -101,12 +101,22 @@ const LoginSystem = {
                             <div class="method-arrow">→</div>
                         </div>
 
-                        <!-- 方式3：手动导入Cookie -->
+                        <!-- 方式3：自动从浏览器导入 -->
+                        <div class="login-method-card" onclick="LoginSystem.startAutoImport()">
+                            <div class="method-icon">🚀</div>
+                            <div class="method-info">
+                                <h4>自动从浏览器导入</h4>
+                                <p>从Chrome/Firefox/Edge自动读取Cookie（推荐）</p>
+                            </div>
+                            <div class="method-arrow">→</div>
+                        </div>
+
+                        <!-- 方式4：手动导入Cookie -->
                         <div class="login-method-card" onclick="LoginSystem.showCookieImport()">
                             <div class="method-icon">📋</div>
                             <div class="method-info">
-                                <h4>导入Cookie</h4>
-                                <p>手动粘贴已有的Cookie</p>
+                                <h4>手动导入Cookie</h4>
+                                <p>粘贴已有的Cookie JSON</p>
                             </div>
                             <div class="method-arrow">→</div>
                         </div>
@@ -258,6 +268,144 @@ const LoginSystem = {
             console.error('[Browser Login] 错误:', error);
             alert('浏览器登录失败: ' + error.message);
             this.showLoginModal({ reasons: [], domain: this.currentDomain, has_cookies: false });
+        }
+    },
+
+    // ==================== 自动Cookie导入 ====================
+    async startAutoImport() {
+        console.log('[Auto Import] 开始自动Cookie导入');
+
+        const modal = document.getElementById('loginModal');
+        if (!modal) return;
+
+        modal.querySelector('.login-modal-body').innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div class="spinner" style="margin: 0 auto 1rem;"></div>
+                <h3>正在从浏览器读取Cookie...</h3>
+                <p style="color: #666; margin-top: 1rem;">
+                    正在尝试从 Chrome、Firefox、Edge 读取 ${this.currentDomain} 的Cookie<br>
+                    <span style="font-size: 0.85rem;">这可能需要几秒钟...</span>
+                </p>
+                <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                        style="margin-top: 1.5rem;">
+                    取消
+                </button>
+            </div>
+        `;
+
+        try {
+            const response = await fetch(`${API_BASE}/api/proxy/cookies/auto-import-all/${this.currentDomain}`);
+            const result = await response.json();
+
+            if (result.success) {
+                // 显示成功详情
+                const bestBrowser = result.best_browser;
+                const count = result.count;
+                const summary = result.summary;
+
+                modal.querySelector('.login-modal-body').innerHTML = `
+                    <div style="padding: 1.5rem;">
+                        <div style="text-align: center; margin-bottom: 1.5rem;">
+                            <div style="font-size: 3rem; margin-bottom: 0.5rem;">✅</div>
+                            <h3 style="color: #4CAF50;">自动导入成功！</h3>
+                        </div>
+
+                        <div style="background: #f5f5f5; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                            <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #ddd;">
+                                <strong>来源浏览器：</strong>
+                                <span>${bestBrowser.toUpperCase()}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #ddd;">
+                                <strong>导入Cookie总数：</strong>
+                                <span>${count} 个</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #ddd;">
+                                <strong>会话Cookie：</strong>
+                                <span style="color: #4CAF50;">${summary.session_count} 个 ${summary.session_names.join(', ')}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #ddd;">
+                                <strong>认证Cookie：</strong>
+                                <span>${summary.auth_count} 个</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 0.5rem 0;">
+                                <strong>Secure Cookie：</strong>
+                                <span>${summary.secure_count} 个</span>
+                            </div>
+                        </div>
+
+                        <div style="background: #e7f3ff; padding: 1rem; border-radius: 8px; border-left: 4px solid #2196F3; margin-bottom: 1rem;">
+                            <strong>💡 提示：</strong>Cookie已自动保存到后端，页面将自动刷新以应用新的登录状态。
+                        </div>
+
+                        <button class="btn btn-primary" onclick="LoginSystem.completeAutoImport()"
+                                style="width: 100%; padding: 0.75rem; font-size: 1rem;">
+                            ✓ 确认并刷新页面
+                        </button>
+                    </div>
+                `;
+
+            } else {
+                throw new Error(result.error || '未找到Cookie');
+            }
+
+        } catch (error) {
+            console.error('[Auto Import] 错误:', error);
+
+            // 显示失败界面
+            modal.querySelector('.login-modal-body').innerHTML = `
+                <div style="padding: 1.5rem;">
+                    <div style="text-align: center; margin-bottom: 1.5rem;">
+                        <div style="font-size: 3rem; margin-bottom: 0.5rem;">❌</div>
+                        <h3 style="color: #f44336;">自动导入失败</h3>
+                    </div>
+
+                    <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 1rem;">
+                        <strong>⚠️ 错误原因：</strong><br>
+                        <span style="color: #856404; font-family: monospace; font-size: 0.9rem;">${error.message}</span>
+                    </div>
+
+                    <div style="background: #f5f5f5; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                        <strong>可能的原因：</strong>
+                        <ul style="margin: 0.5rem 0 0 1.5rem; color: #666;">
+                            <li>浏览器中没有登录 ${this.currentDomain}</li>
+                            <li>浏览器数据库被锁定（请关闭浏览器后重试）</li>
+                            <li>权限不足，无法访问浏览器数据</li>
+                        </ul>
+                    </div>
+
+                    <div style="background: #e7f3ff; padding: 1rem; border-radius: 8px; border-left: 4px solid #2196F3; margin-bottom: 1rem;">
+                        <strong>💡 建议：</strong>
+                        <ol style="margin: 0.5rem 0 0 1.5rem; color: #666;">
+                            <li>在浏览器中登录 ${this.currentDomain}</li>
+                            <li>完全关闭浏览器（确保数据库解锁）</li>
+                            <li>重新尝试自动导入</li>
+                            <li>或使用"手动导入Cookie"方式</li>
+                        </ol>
+                    </div>
+
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                                style="flex: 1;">
+                            ← 返回选择
+                        </button>
+                        <button class="btn btn-primary" onclick="LoginSystem.showCookieImport()"
+                                style="flex: 1;">
+                            手动导入
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    },
+
+    async completeAutoImport() {
+        showToast('✓ 正在刷新页面...', 'success');
+
+        this.closeModal();
+
+        // 重新加载页面
+        if (typeof loadPage === 'function') {
+            setTimeout(() => loadPage(), 500);
         }
     },
 
