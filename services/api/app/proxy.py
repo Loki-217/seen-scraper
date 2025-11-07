@@ -865,23 +865,33 @@ def open_browser_for_login(url, domain):
 
             print(f"[Browser] 初始Cookie数量: {initial_count}", file=sys.stderr)
 
-            # 等待登录完成（双重检测）
+            # 等待登录完成（改进的检测逻辑）
             login_completed = False
             max_wait = 300  # 5分钟超时
 
             for i in range(max_wait):
                 time.sleep(1)
 
-                # 检测1：按钮被点击
+                # 检测1：按钮被点击（用户主动确认）
                 button_clicked = page.evaluate('window.__loginCompleted === true')
 
-                # 检测2：Cookie数量增加超过3个
+                # 检测2：出现会话Cookie（更精确的登录判断）
                 current_cookies = context.cookies()
-                cookie_increased = len(current_cookies) > initial_count + 3
+                session_cookie_names = ['phpsessid', 'sessionid', 'session', 'jsessionid', 'sid', 'sess']
+                has_session_cookie = any(
+                    c.get('name', '').lower() in session_cookie_names
+                    for c in current_cookies
+                )
 
-                if button_clicked or cookie_increased:
+                # 🔥 修复：只有按钮点击或出现会话Cookie才认为登录完成
+                # 不再单纯依赖Cookie数量增加（广告Cookie会误触发）
+                if button_clicked or has_session_cookie:
                     login_completed = True
-                    reason = "按钮点击" if button_clicked else "Cookie增加"
+                    if button_clicked:
+                        reason = "用户点击确认按钮"
+                    else:
+                        session_cookies = [c.get('name') for c in current_cookies if c.get('name', '').lower() in session_cookie_names]
+                        reason = f"检测到会话Cookie: {session_cookies}"
                     print(f"[Browser] 登录完成（{reason}）", file=sys.stderr)
                     break
 
