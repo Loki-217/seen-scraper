@@ -191,7 +191,7 @@ function showAntiScrapingModal(url) {
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
                 <h3>🛡️ 检测到反爬虫保护</h3>
-                <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">✕</button>
+                <button type="button" class="close-btn" onclick="this.closest('.modal-overlay').remove()">✕</button>
             </div>
             <div class="modal-body">
                 <p style="margin-bottom: 1rem; line-height: 1.6;">
@@ -209,10 +209,10 @@ function showAntiScrapingModal(url) {
                 </p>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                <button type="button" class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
                     取消
                 </button>
-                <button class="btn btn-primary" onclick="switchToSmartMode('${url}')">
+                <button type="button" class="btn btn-primary" onclick="switchToSmartMode('${url}')">
                     切换到智能模式
                 </button>
             </div>
@@ -448,7 +448,7 @@ function displaySmartResults(data) {
                     </ul>
                     ${sug.sample_data.length > 3 ? `
                         <div style="text-align: right; margin-top: 0.75rem;">
-                            <button class="btn-link" onclick="event.stopPropagation(); showAllSamples(${idx})">
+                            <button type="button" class="btn-link" onclick="event.stopPropagation(); showAllSamples(${idx})">
                                 查看全部 ${sug.sample_data.length} 条 →
                             </button>
                         </div>
@@ -495,16 +495,16 @@ function updateSmartModeActions() {
     if (!actionBar) return;
     
     actionBar.innerHTML = `
-        <button class="btn" style="background: #e0e0e0; color: #333;" onclick="selectAllSuggestions()">
+        <button type="button" class="btn" style="background: #e0e0e0; color: #333;" onclick="selectAllSuggestions()">
             ✓ 全选
         </button>
-        <button class="btn btn-primary" style="flex: 1" onclick="previewSmartData()">
+        <button type="button" class="btn btn-primary" style="flex: 1" onclick="previewSmartData()">
             👁️ 预览数据
         </button>
-        <button class="btn btn-primary" style="flex: 1" onclick="applySmartSelections()">
+        <button type="button" class="btn btn-primary" style="flex: 1" onclick="applySmartSelections()">
             ✅ 应用选中字段
         </button>
-        <button class="btn" style="background: #4CAF50; color: white; flex: 1" onclick="exportSmartData()">
+        <button type="button" class="btn" style="background: #4CAF50; color: white; flex: 1" onclick="exportSmartData()">
             📥 导出数据
         </button>
     `;
@@ -626,7 +626,7 @@ function showAllSamples(idx) {
                     <h3 style="margin: 0; color: #333;">
                         ${sug.name} - 全部示例数据
                     </h3>
-                    <button onclick="document.getElementById('samplesModal').remove()" 
+                    <button type="button" onclick="document.getElementById('samplesModal').remove()"
                             style="background: #f5f5f5; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 1.2rem;">
                         ✕
                     </button>
@@ -662,7 +662,7 @@ function showAllSamples(idx) {
                     </ol>
                 </div>
                 
-                <button class="btn btn-primary" 
+                <button type="button" class="btn btn-primary" 
                         style="width: 100%; margin-top: 1.5rem; padding: 0.75rem;" 
                         onclick="document.getElementById('samplesModal').remove()">
                     关闭
@@ -699,7 +699,7 @@ function renderFields() {
                        onchange="updateFieldName(${idx}, this.value)"
                        placeholder="字段名称">
                 <span class="field-type-badge">${field.attr}</span>
-                <button class="btn-danger" onclick="removeField(${idx})">删除</button>
+                <button type="button" class="btn-danger" onclick="removeField(${idx})">删除</button>
             </div>
             <div class="field-info">
                 <strong>选择器:</strong> <code>${field.selector}</code>
@@ -1058,13 +1058,13 @@ function createPreviewModal() {
         <div class="modal-content" style="max-width: 90%; max-height: 90vh;">
             <div class="modal-header">
                 <h3>📊 数据预览</h3>
-                <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">✕</button>
+                <button type="button" class="close-btn" onclick="this.closest('.modal-overlay').remove()">✕</button>
             </div>
             <div class="modal-body" id="previewModalBody" style="max-height: 70vh; overflow: auto;">
                 <!-- 内容将动态填充 -->
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                <button type="button" class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
                     关闭
                 </button>
             </div>
