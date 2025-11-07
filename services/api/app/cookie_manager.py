@@ -243,10 +243,10 @@ class UniversalCookieManager:
                 'value': cookie.value,
                 'domain': cookie.domain,
                 'path': cookie.path,
-                'secure': cookie.secure,
-                'httpOnly': cookie.has_nonstandard_attr('HttpOnly') if hasattr(cookie, 'has_nonstandard_attr') else False,
+                'secure': bool(cookie.secure),  # 🔥 显式转换为布尔值（避免0/1导致的类型错误）
+                'httpOnly': bool(cookie.has_nonstandard_attr('HttpOnly')) if hasattr(cookie, 'has_nonstandard_attr') else False,
                 'sameSite': cookie.get_nonstandard_attr('SameSite', 'Lax') if hasattr(cookie, 'get_nonstandard_attr') else 'Lax',
-                'expires': cookie.expires if cookie.expires else -1
+                'expires': int(cookie.expires) if cookie.expires else -1  # 🔥 确保expires是整数
             }
 
             cookies.append(cookie_dict)
