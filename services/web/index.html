@@ -28,11 +28,11 @@
                    placeholder="粘贴网页地址，开始可视化数据提取">
             
             <div class="mode-selector">
-                <button class="mode-btn active" onclick="switchMode('manual')"> 手动选择</button>
-                <button class="mode-btn" onclick="switchMode('smart')"> 智能识别</button>
+                <button type="button" class="mode-btn active" onclick="switchMode('manual')"> 手动选择</button>
+                <button type="button" class="mode-btn" onclick="switchMode('smart')"> 智能识别</button>
             </div>
             
-            <button class="btn btn-primary" onclick="loadPage()">
+            <button type="button" class="btn btn-primary" onclick="loadPage()">
                 开始提取
             </button>
         </div>
@@ -54,7 +54,7 @@
                 <div class="web-preview">
                     <div class="preview-header">
                         <h3> 网页预览</h3>
-                        <button class="btn btn-secondary" onclick="toggleConfigModal()">
+                        <button type="button" class="btn btn-secondary" onclick="toggleConfigModal()">
                             ⚙️ 配置字段
                         </button>
                     </div>
@@ -119,10 +119,10 @@
                     <div id="suggestionsList" style="flex: 1; overflow-y: auto; padding: 1rem;"></div>
                     
                     <div class="action-bar" style="padding: 1rem; border-top: 2px solid #e0e0e0; display: flex; gap: 0.5rem;">
-                        <button class="btn btn-primary" style="flex: 1" onclick="applySmartSelections()">
+                        <button type="button" class="btn btn-primary" style="flex: 1" onclick="applySmartSelections()">
                             应用选中的字段
                         </button>
-                        <button class="btn" style="background: #e0e0e0; color: #333;" onclick="selectAllSuggestions()">
+                        <button type="button" class="btn" style="background: #e0e0e0; color: #333;" onclick="selectAllSuggestions()">
                             全选
                         </button>
                     </div>
@@ -133,7 +133,7 @@
             
     
     <!-- 绿色配置按钮 -->
-    <button class="config-toggle-btn" onclick="toggleConfigModal()" title="配置采集字段">
+    <button type="button" class="config-toggle-btn" onclick="toggleConfigModal()" title="配置采集字段">
         ⚙️
     </button>
     
@@ -142,7 +142,7 @@
         <div class="config-content" onclick="event.stopPropagation()">
             <div class="config-header">
                 <h2>📋 采集配置</h2>
-                <button class="close-btn" onclick="toggleConfigModal()">✕</button>
+                <button type="button" class="close-btn" onclick="toggleConfigModal()">✕</button>
             </div>
             
             <div class="config-body">
@@ -156,10 +156,10 @@
             </div>
             
             <div class="config-footer">
-                <button class="btn btn-confirm" id="confirmBtn" onclick="confirmFields()" disabled>
+                <button type="button" class="btn btn-confirm" id="confirmBtn" onclick="confirmFields()" disabled>
                     ✓ 确认配置
                 </button>
-                <button class="btn btn-secondary" onclick="clearFields()">
+                <button type="button" class="btn btn-secondary" onclick="clearFields()">
                     清空
                 </button>
             </div>
@@ -167,6 +167,8 @@
     </div>
     
     <!-- JavaScript -->
+    <!-- 🐛 调试脚本 - 用于追踪页面刷新问题 -->
+    <script src="js/debug-refresh.js"></script>
     <script src="js/index-v2.js"></script>
     <script src="js/login.js"></script>
 </body>

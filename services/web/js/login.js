@@ -68,7 +68,7 @@ const LoginSystem = {
             <div class="login-modal-content">
                 <div class="login-modal-header">
                     <h2>🔐 需要登录</h2>
-                    <button class="login-close-btn" onclick="LoginSystem.closeModal()">✕</button>
+                    <button type="button" class="login-close-btn" onclick="LoginSystem.closeModal()">✕</button>
                 </div>
 
                 <div class="login-modal-body">
@@ -114,7 +114,7 @@ const LoginSystem = {
                 </div>
 
                 <div class="login-modal-footer">
-                    <button class="btn btn-secondary" onclick="LoginSystem.closeModal()">
+                    <button type="button" class="btn btn-secondary" onclick="LoginSystem.closeModal()">
                         跳过
                     </button>
                 </div>
@@ -148,11 +148,11 @@ const LoginSystem = {
                         style="width: 100%; height: 400px; border: 1px solid #ddd; border-radius: 8px;">
                 </iframe>
                 <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                    <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                    <button type="button" class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
                             style="padding: 0.75rem 1.5rem;">
                         ← 返回
                     </button>
-                    <button class="btn btn-primary" onclick="LoginSystem.completeIframeLogin()"
+                    <button type="button" class="btn btn-primary" onclick="LoginSystem.completeIframeLogin()"
                             style="flex: 1; padding: 0.75rem 2rem; font-size: 1rem;">
                         ✓ 登录完成，保存Cookie
                     </button>
@@ -228,11 +228,11 @@ const LoginSystem = {
                 </div>
 
                 <div style="display: flex; gap: 0.5rem;">
-                    <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                    <button type="button" class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
                             style="flex: 1;">
                         ← 返回选择
                     </button>
-                    <button class="btn btn-primary" onclick="LoginSystem.showCookieImport()"
+                    <button type="button" class="btn btn-primary" onclick="LoginSystem.showCookieImport()"
                             style="flex: 1;">
                         手动导入
                     </button>
@@ -303,11 +303,11 @@ const LoginSystem = {
                     </div>
 
                     <div style="display: flex; gap: 0.5rem;">
-                        <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                        <button type="button" class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
                                 style="flex: 1;">
                             取消
                         </button>
-                        <button class="btn btn-primary" onclick="LoginSystem.confirmLoginComplete()"
+                        <button type="button" class="btn btn-primary" onclick="LoginSystem.confirmLoginComplete()"
                                 style="flex: 2; padding: 0.75rem; font-size: 1rem;">
                             ✓ 我已完成登录并关闭浏览器
                         </button>
@@ -401,7 +401,7 @@ const LoginSystem = {
                             <strong>💡 提示：</strong>Cookie已自动保存到后端，页面将自动刷新以应用新的登录状态。
                         </div>
 
-                        <button class="btn btn-primary" onclick="LoginSystem.completeAutoImport()"
+                        <button type="button" class="btn btn-primary" onclick="LoginSystem.completeAutoImport()"
                                 style="width: 100%; padding: 0.75rem; font-size: 1rem;">
                             ✓ 确认并刷新页面
                         </button>
@@ -448,11 +448,11 @@ const LoginSystem = {
                     </div>
 
                     <div style="display: flex; gap: 0.5rem;">
-                        <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                        <button type="button" class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
                                 style="flex: 1;">
                             ← 返回选择
                         </button>
-                        <button class="btn btn-primary" onclick="LoginSystem.showCookieImport()"
+                        <button type="button" class="btn btn-primary" onclick="LoginSystem.showCookieImport()"
                                 style="flex: 1;">
                             手动导入
                         </button>
@@ -491,10 +491,10 @@ const LoginSystem = {
                 </textarea>
 
                 <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                    <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})">
+                    <button type="button" class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})">
                         返回
                     </button>
-                    <button class="btn btn-primary" onclick="LoginSystem.importCookies()" style="flex: 1;">
+                    <button type="button" class="btn btn-primary" onclick="LoginSystem.importCookies()" style="flex: 1;">
                         导入
                     </button>
                 </div>
@@ -562,7 +562,7 @@ const LoginSystem = {
             <div class="login-modal-content">
                 <div class="login-modal-header">
                     <h2>📋 Cookie管理</h2>
-                    <button class="login-close-btn" onclick="document.getElementById('cookieManagerModal').remove()">✕</button>
+                    <button type="button" class="login-close-btn" onclick="document.getElementById('cookieManagerModal').remove()">✕</button>
                 </div>
 
                 <div class="login-modal-body" style="max-height: 400px; overflow-y: auto;">
@@ -581,10 +581,10 @@ const LoginSystem = {
                                         </span>
                                     </div>
                                     <div style="display: flex; gap: 0.5rem;">
-                                        <button class="btn btn-secondary" onclick="LoginSystem.exportCookie('${d.domain}')" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+                                        <button type="button" class="btn btn-secondary" onclick="LoginSystem.exportCookie('${d.domain}')" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
                                             导出
                                         </button>
-                                        <button class="btn btn-danger" onclick="LoginSystem.deleteCookie('${d.domain}')" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+                                        <button type="button" class="btn btn-danger" onclick="LoginSystem.deleteCookie('${d.domain}')" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
                                             删除
                                         </button>
                                     </div>
@@ -595,7 +595,7 @@ const LoginSystem = {
                 </div>
 
                 <div class="login-modal-footer">
-                    <button class="btn btn-secondary" onclick="document.getElementById('cookieManagerModal').remove()">
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('cookieManagerModal').remove()">
                         关闭
                     </button>
                 </div>
