@@ -91,22 +91,12 @@ const LoginSystem = {
                             <div class="method-arrow">→</div>
                         </div>
 
-                        <!-- 方式2：浏览器弹窗登录 -->
-                        <div class="login-method-card" onclick="LoginSystem.startBrowserLogin()">
-                            <div class="method-icon">🌐</div>
-                            <div class="method-info">
-                                <h4>浏览器弹窗登录</h4>
-                                <p>在独立浏览器窗口登录（备用）</p>
-                            </div>
-                            <div class="method-arrow">→</div>
-                        </div>
-
-                        <!-- 方式3：自动从浏览器导入 -->
+                        <!-- 方式2：自动从浏览器导入 -->
                         <div class="login-method-card" onclick="LoginSystem.startAutoImport()">
                             <div class="method-icon">🚀</div>
                             <div class="method-info">
-                                <h4>自动从浏览器导入</h4>
-                                <p>从Chrome/Firefox/Edge自动读取Cookie（推荐）</p>
+                                <h4>自动从浏览器导入Cookie</h4>
+                                <p>打开真实浏览器登录，自动读取Cookie（推荐）</p>
                             </div>
                             <div class="method-arrow">→</div>
                         </div>
@@ -221,63 +211,141 @@ const LoginSystem = {
         }
     },
 
-    // ==================== 浏览器弹窗登录 ====================
-    async startBrowserLogin() {
-        console.log('[Browser Login] 开始浏览器弹窗登录');
-
+    showAutoImportError(errorMessage) {
         const modal = document.getElementById('loginModal');
         if (!modal) return;
 
         modal.querySelector('.login-modal-body').innerHTML = `
-            <div style="text-align: center; padding: 2rem;">
-                <div class="spinner" style="margin: 0 auto 1rem;"></div>
-                <h3>正在打开浏览器窗口...</h3>
-                <p style="color: #666; margin-top: 1rem;">
-                    请在弹出的浏览器窗口中完成登录<br>
-                    登录完成后，点击窗口顶部的"我已完成登录"按钮
-                </p>
-                <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
-                        style="margin-top: 1.5rem;">
-                    取消
-                </button>
+            <div style="padding: 1.5rem;">
+                <div style="text-align: center; margin-bottom: 1.5rem;">
+                    <div style="font-size: 3rem; margin-bottom: 0.5rem;">❌</div>
+                    <h3 style="color: #f44336;">操作失败</h3>
+                </div>
+
+                <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 1rem;">
+                    <strong>⚠️ 错误原因：</strong><br>
+                    <span style="color: #856404; font-family: monospace; font-size: 0.9rem;">${errorMessage}</span>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                            style="flex: 1;">
+                        ← 返回选择
+                    </button>
+                    <button class="btn btn-primary" onclick="LoginSystem.showCookieImport()"
+                            style="flex: 1;">
+                        手动导入
+                    </button>
+                </div>
             </div>
         `;
-
-        try {
-            const response = await fetch(`${API_BASE}/api/proxy/open-browser-login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: this.currentUrl })
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                showToast(`✓ 登录成功！保存了 ${result.count} 个Cookie`, 'success');
-                this.closeModal();
-
-                // 重新加载页面
-                if (typeof loadPage === 'function') {
-                    setTimeout(() => loadPage(), 1000);
-                }
-            } else {
-                throw new Error(result.error || '登录失败');
-            }
-
-        } catch (error) {
-            console.error('[Browser Login] 错误:', error);
-            alert('浏览器登录失败: ' + error.message);
-            this.showLoginModal({ reasons: [], domain: this.currentDomain, has_cookies: false });
-        }
     },
 
     // ==================== 自动Cookie导入 ====================
     async startAutoImport() {
-        console.log('[Auto Import] 开始自动Cookie导入');
+        console.log('[Auto Import] 开始自动Cookie导入流程');
 
         const modal = document.getElementById('loginModal');
         if (!modal) return;
 
+        // 第一步：检测可用浏览器
+        modal.querySelector('.login-modal-body').innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div class="spinner" style="margin: 0 auto 1rem;"></div>
+                <h3>正在检测可用浏览器...</h3>
+                <p style="color: #666; margin-top: 1rem;">请稍候...</p>
+            </div>
+        `;
+
+        try {
+            // 检测浏览器
+            const detectResponse = await fetch(`${API_BASE}/api/proxy/cookies/detect-browsers`);
+            const detectResult = await detectResponse.json();
+
+            if (!detectResult.success) {
+                throw new Error('检测浏览器失败');
+            }
+
+            const browsers = detectResult.browsers;
+
+            // 找到第一个可用且能读取Cookie的浏览器
+            let bestBrowser = 'default';
+            for (const [name, info] of Object.entries(browsers)) {
+                if (info.can_read_cookies) {
+                    bestBrowser = name;
+                    break;
+                }
+            }
+
+            // 第二步：打开浏览器
+            modal.querySelector('.login-modal-body').innerHTML = `
+                <div style="padding: 2rem;">
+                    <div style="text-align: center; margin-bottom: 1.5rem;">
+                        <div style="font-size: 3rem; margin-bottom: 0.5rem;">🌐</div>
+                        <h3>正在打开浏览器...</h3>
+                    </div>
+
+                    <div style="background: #e7f3ff; padding: 1.5rem; border-radius: 8px; border-left: 4px solid #2196F3; margin-bottom: 1.5rem;">
+                        <strong>📝 操作步骤：</strong>
+                        <ol style="margin: 0.75rem 0 0 1.5rem; color: #333; line-height: 1.8;">
+                            <li>在打开的浏览器中登录 <strong>${this.currentDomain}</strong></li>
+                            <li>确认登录成功（能看到你的账户信息）</li>
+                            <li><strong style="color: #f44336;">关闭浏览器</strong>（重要！否则无法读取Cookie）</li>
+                            <li>点击下方的"我已完成登录"按钮</li>
+                        </ol>
+                    </div>
+
+                    <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 1.5rem;">
+                        <strong>⚠️ 重要提示：</strong><br>
+                        <span style="color: #856404;">
+                            登录完成后，<strong>务必关闭浏览器</strong>，否则Cookie数据库会被锁定，无法读取。
+                        </span>
+                    </div>
+
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                                style="flex: 1;">
+                            取消
+                        </button>
+                        <button class="btn btn-primary" onclick="LoginSystem.confirmLoginComplete()"
+                                style="flex: 2; padding: 0.75rem; font-size: 1rem;">
+                            ✓ 我已完成登录并关闭浏览器
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            // 打开浏览器
+            const openResponse = await fetch(`${API_BASE}/api/proxy/cookies/open-browser`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: this.currentUrl,
+                    browser: bestBrowser
+                })
+            });
+
+            const openResult = await openResponse.json();
+
+            if (!openResult.success) {
+                throw new Error(openResult.error || '打开浏览器失败');
+            }
+
+            console.log('[Auto Import] 浏览器已打开:', openResult);
+
+        } catch (error) {
+            console.error('[Auto Import] 错误:', error);
+            this.showAutoImportError(error.message);
+        }
+    },
+
+    async confirmLoginComplete() {
+        console.log('[Auto Import] 用户确认登录完成，开始读取Cookie');
+
+        const modal = document.getElementById('loginModal');
+        if (!modal) return;
+
+        // 显示读取中状态
         modal.querySelector('.login-modal-body').innerHTML = `
             <div style="text-align: center; padding: 2rem;">
                 <div class="spinner" style="margin: 0 auto 1rem;"></div>
@@ -286,10 +354,6 @@ const LoginSystem = {
                     正在尝试从 Chrome、Firefox、Edge 读取 ${this.currentDomain} 的Cookie<br>
                     <span style="font-size: 0.85rem;">这可能需要几秒钟...</span>
                 </p>
-                <button class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
-                        style="margin-top: 1.5rem;">
-                    取消
-                </button>
             </div>
         `;
 

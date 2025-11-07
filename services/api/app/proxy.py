@@ -827,6 +827,43 @@ async def auto_import_from_all_browsers(domain: str):
         print(f"[API] ❌ 自动导入失败: {e}")
         return {"success": False, "error": str(e)}
 
+@router.get("/cookies/detect-browsers")
+async def detect_browsers():
+    """🔍 检测系统中可用的浏览器"""
+    try:
+        browsers = cookie_manager.detect_available_browsers()
+        return {
+            "success": True,
+            "browsers": browsers
+        }
+    except Exception as e:
+        print(f"[API] ❌ 检测浏览器失败: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.post("/cookies/open-browser")
+async def open_browser_for_login(req: dict):
+    """🌐 打开系统浏览器以供用户登录
+
+    请求体:
+    {
+        "url": "https://example.com/login",
+        "browser": "chrome" | "firefox" | "edge" | "default"
+    }
+    """
+    try:
+        url = req.get('url')
+        browser = req.get('browser', 'default')
+
+        if not url:
+            return {"success": False, "error": "URL参数必填"}
+
+        result = cookie_manager.open_browser_for_login(url, browser)
+        return result
+
+    except Exception as e:
+        print(f"[API] ❌ 打开浏览器失败: {e}")
+        return {"success": False, "error": str(e)}
+
 # ==================== 登录检测API ====================
 
 @router.post("/detect-login")

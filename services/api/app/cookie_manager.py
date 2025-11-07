@@ -5,6 +5,9 @@
 import browser_cookie3
 import json
 import os
+import webbrowser
+import platform
+import subprocess
 from typing import Dict, List, Optional
 from http.cookiejar import Cookie
 
@@ -285,6 +288,152 @@ class UniversalCookieManager:
             'secure_count': len([c for c in cookies if c.get('secure', False)]),
             'httponly_count': len([c for c in cookies if c.get('httpOnly', False)])
         }
+
+    # ==================== 浏览器操作方法 ====================
+
+    def detect_available_browsers(self) -> Dict[str, Dict]:
+        """
+        检测系统中可用的浏览器
+
+        Returns:
+            字典 {浏览器名: {可用状态, 路径}}
+        """
+        result = {}
+        system = platform.system()
+
+        # Chrome检测
+        chrome_paths = {
+            'Windows': [
+                r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+                r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+                os.path.expanduser(r'~\AppData\Local\Google\Chrome\Application\chrome.exe')
+            ],
+            'Darwin': ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'],
+            'Linux': ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium']
+        }
+
+        # Firefox检测
+        firefox_paths = {
+            'Windows': [
+                r'C:\Program Files\Mozilla Firefox\firefox.exe',
+                r'C:\Program Files (x86)\Mozilla Firefox\firefox.exe'
+            ],
+            'Darwin': ['/Applications/Firefox.app/Contents/MacOS/firefox'],
+            'Linux': ['/usr/bin/firefox', '/usr/bin/firefox-esr']
+        }
+
+        # Edge检测
+        edge_paths = {
+            'Windows': [
+                r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+                r'C:\Program Files\Microsoft\Edge\Application\msedge.exe'
+            ],
+            'Darwin': ['/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'],
+            'Linux': ['/usr/bin/microsoft-edge', '/usr/bin/microsoft-edge-stable']
+        }
+
+        browsers = {
+            'chrome': chrome_paths,
+            'firefox': firefox_paths,
+            'edge': edge_paths
+        }
+
+        for browser_name, paths_dict in browsers.items():
+            paths = paths_dict.get(system, [])
+            found_path = None
+
+            for path in paths:
+                if os.path.exists(path):
+                    found_path = path
+                    break
+
+            # 还可以通过browser_cookie3测试是否能读取Cookie
+            can_read_cookies = False
+            try:
+                if browser_name == 'chrome':
+                    browser_cookie3.chrome(domain_name='google.com')
+                    can_read_cookies = True
+                elif browser_name == 'firefox':
+                    browser_cookie3.firefox(domain_name='google.com')
+                    can_read_cookies = True
+                elif browser_name == 'edge':
+                    browser_cookie3.edge(domain_name='google.com')
+                    can_read_cookies = True
+            except:
+                pass
+
+            result[browser_name] = {
+                'available': found_path is not None or can_read_cookies,
+                'path': found_path,
+                'can_read_cookies': can_read_cookies
+            }
+
+        print(f"[CookieManager] 检测到的浏览器: {result}")
+        return result
+
+    def open_browser_for_login(self, url: str, browser: str = 'default') -> Dict:
+        """
+        打开系统浏览器以供用户登录
+
+        Args:
+            url: 要打开的URL
+            browser: 浏览器类型 ('chrome', 'firefox', 'edge', 'default')
+
+        Returns:
+            操作结果
+        """
+        try:
+            if browser == 'default':
+                # 使用系统默认浏览器
+                webbrowser.open(url)
+                print(f"[CookieManager] 已用默认浏览器打开: {url}")
+                return {
+                    'success': True,
+                    'browser': 'default',
+                    'message': '已打开系统默认浏览器'
+                }
+            else:
+                # 尝试打开指定浏览器
+                browsers_info = self.detect_available_browsers()
+                browser_info = browsers_info.get(browser, {})
+
+                if not browser_info.get('available'):
+                    raise Exception(f"浏览器 {browser} 不可用")
+
+                browser_path = browser_info.get('path')
+
+                if browser_path and os.path.exists(browser_path):
+                    # 使用subprocess打开指定浏览器
+                    if platform.system() == 'Windows':
+                        subprocess.Popen([browser_path, url])
+                    elif platform.system() == 'Darwin':
+                        subprocess.Popen(['open', '-a', browser_path, url])
+                    else:  # Linux
+                        subprocess.Popen([browser_path, url])
+
+                    print(f"[CookieManager] 已用 {browser} 打开: {url}")
+                    return {
+                        'success': True,
+                        'browser': browser,
+                        'path': browser_path,
+                        'message': f'已打开 {browser.upper()} 浏览器'
+                    }
+                else:
+                    # 回退到默认浏览器
+                    webbrowser.open(url)
+                    return {
+                        'success': True,
+                        'browser': 'default',
+                        'message': f'未找到 {browser}，已使用默认浏览器'
+                    }
+
+        except Exception as e:
+            print(f"[CookieManager] 打开浏览器失败: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'message': f'打开浏览器失败: {str(e)}'
+            }
 
 
 # 创建全局实例
