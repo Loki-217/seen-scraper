@@ -129,21 +129,28 @@ const LoginSystem = {
 
     // ==================== iframe登录 ====================
     async startIframeLogin() {
-        console.log('[iframe Login] 开始iframe登录');
+        console.log('[iframe Login] 🚀🚀🚀 开始iframe登录 - 全屏模式');
 
         // 创建iframe登录界面
         const modal = document.getElementById('loginModal');
-        if (!modal) return;
+        if (!modal) {
+            console.error('[iframe Login] ❌ 找不到 loginModal 元素');
+            return;
+        }
 
         // 🔥 改为全屏模式
         const modalContent = modal.querySelector('.login-modal-content');
         if (modalContent) {
+            console.log('[iframe Login] ✅ 找到 modalContent，开始设置全屏样式');
             modalContent.style.maxWidth = '100vw';
             modalContent.style.maxHeight = '100vh';
             modalContent.style.width = '100%';
             modalContent.style.height = '100%';
             modalContent.style.borderRadius = '0';  // 全屏时移除圆角
             modalContent.style.margin = '0';
+            console.log('[iframe Login] ✅ 全屏样式已应用');
+        } else {
+            console.error('[iframe Login] ❌ 找不到 .login-modal-content 元素');
         }
 
         modal.querySelector('.login-modal-body').innerHTML = `
