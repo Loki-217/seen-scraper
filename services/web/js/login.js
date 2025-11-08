@@ -135,39 +135,47 @@ const LoginSystem = {
         const modal = document.getElementById('loginModal');
         if (!modal) return;
 
-        // 🔥 放大登录窗口以适应iframe内容
+        // 🔥 改为全屏模式
         const modalContent = modal.querySelector('.login-modal-content');
         if (modalContent) {
-            modalContent.style.maxWidth = '1200px';  // 从 600px 放大到 1200px
-            modalContent.style.maxHeight = '95vh';   // 从 85vh 放大到 95vh
-            modalContent.style.width = '95%';        // 增加宽度占比
+            modalContent.style.maxWidth = '100vw';
+            modalContent.style.maxHeight = '100vh';
+            modalContent.style.width = '100%';
+            modalContent.style.height = '100%';
+            modalContent.style.borderRadius = '0';  // 全屏时移除圆角
+            modalContent.style.margin = '0';
         }
 
         modal.querySelector('.login-modal-body').innerHTML = `
-            <div class="iframe-login-container">
-                <div class="iframe-login-header">
-                    <h3>请在下方完成登录</h3>
-                    <p style="color: #999; font-size: 0.9rem;">登录完成后，点击下方按钮保存Cookie</p>
+            <div class="iframe-login-container" style="display: flex; flex-direction: column; height: 100%; padding: 0;">
+                <!-- 顶部操作栏 -->
+                <div style="background: rgba(0, 0, 0, 0.15); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-shrink: 0;">
+                    <div style="flex: 1;">
+                        <h3 style="margin: 0; color: white; font-size: 1.2rem;">请在下方完成登录</h3>
+                        <p style="margin: 0.25rem 0 0 0; color: rgba(255,255,255,0.8); font-size: 0.9rem;">登录完成后，点击右侧按钮保存Cookie</p>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
+                        <button type="button" class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
+                                style="padding: 0.75rem 1.5rem; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                            ← 返回
+                        </button>
+                        <button type="button" class="btn btn-primary" onclick="LoginSystem.completeIframeLogin()"
+                                style="padding: 0.75rem 2rem; background: #4CAF50; color: white; font-weight: bold;">
+                            ✓ 登录完成，保存Cookie
+                        </button>
+                    </div>
                 </div>
 
-                <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid #ffc107;">
-                    <strong>⚠️ 提示：</strong>如果下方显示"验证浏览器"或空白页面，说明该网站禁止在iframe中登录。<br>
+                <!-- 提示信息 -->
+                <div style="background: #fff3cd; padding: 1rem 2rem; border-left: 4px solid #ffc107; flex-shrink: 0;">
+                    <strong>⚠️ 提示：</strong>如果下方显示"验证浏览器"或空白页面，说明该网站禁止在iframe中登录。
                     <span style="color: #856404;">请使用"自动从浏览器导入Cookie"方式。</span>
                 </div>
 
+                <!-- iframe 登录页面 -->
                 <iframe id="loginIframe" src="${this.currentUrl}"
-                        style="width: 100%; height: 650px; border: 1px solid #ddd; border-radius: 8px;">
+                        style="width: 100%; flex: 1; border: none; background: white;">
                 </iframe>
-                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                    <button type="button" class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
-                            style="padding: 0.75rem 1.5rem;">
-                        ← 返回
-                    </button>
-                    <button type="button" class="btn btn-primary" onclick="LoginSystem.completeIframeLogin()"
-                            style="flex: 1; padding: 0.75rem 2rem; font-size: 1rem;">
-                        ✓ 登录完成，保存Cookie
-                    </button>
-                </div>
             </div>
         `;
     },
