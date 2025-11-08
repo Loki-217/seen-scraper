@@ -57,6 +57,9 @@ const LoginSystem = {
         const existing = document.getElementById('loginModal');
         if (existing) existing.remove();
 
+        // 如果是从iframe登录返回，需要移除内联样式以恢复默认大小
+        // （新创建的modal会使用CSS默认样式）
+
         const modal = document.createElement('div');
         modal.id = 'loginModal';
         modal.className = 'login-modal active';
@@ -132,6 +135,14 @@ const LoginSystem = {
         const modal = document.getElementById('loginModal');
         if (!modal) return;
 
+        // 🔥 放大登录窗口以适应iframe内容
+        const modalContent = modal.querySelector('.login-modal-content');
+        if (modalContent) {
+            modalContent.style.maxWidth = '1200px';  // 从 600px 放大到 1200px
+            modalContent.style.maxHeight = '95vh';   // 从 85vh 放大到 95vh
+            modalContent.style.width = '95%';        // 增加宽度占比
+        }
+
         modal.querySelector('.login-modal-body').innerHTML = `
             <div class="iframe-login-container">
                 <div class="iframe-login-header">
@@ -141,11 +152,11 @@ const LoginSystem = {
 
                 <div style="background: #fff3cd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid #ffc107;">
                     <strong>⚠️ 提示：</strong>如果下方显示"验证浏览器"或空白页面，说明该网站禁止在iframe中登录。<br>
-                    <span style="color: #856404;">请使用"浏览器弹窗登录"方式。</span>
+                    <span style="color: #856404;">请使用"自动从浏览器导入Cookie"方式。</span>
                 </div>
 
                 <iframe id="loginIframe" src="${this.currentUrl}"
-                        style="width: 100%; height: 400px; border: 1px solid #ddd; border-radius: 8px;">
+                        style="width: 100%; height: 650px; border: 1px solid #ddd; border-radius: 8px;">
                 </iframe>
                 <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
                     <button type="button" class="btn btn-secondary" onclick="LoginSystem.showLoginModal({reasons: [], domain: LoginSystem.currentDomain, has_cookies: false})"
