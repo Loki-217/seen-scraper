@@ -181,6 +181,7 @@ const LoginSystem = {
 
                 <!-- iframe 登录页面 -->
                 <iframe id="loginIframe" src="${this.currentUrl}"
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
                         style="width: 100%; flex: 1; border: none; background: white;">
                 </iframe>
             </div>
