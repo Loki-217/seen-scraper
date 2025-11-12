@@ -22,16 +22,27 @@
         </div>
         
         <div class="url-container">
-            <input type="url" 
-                   class="url-input" 
+            <input type="url"
+                   class="url-input"
                    id="urlInput"
                    placeholder="粘贴网页地址，开始可视化数据提取">
-            
+
+            <!-- 实时浏览模式开关 -->
+            <div class="browse-mode-switch" style="display: flex; align-items: center; gap: 0.5rem; margin-left: 1rem;">
+                <label class="switch">
+                    <input type="checkbox" id="browseModeSwitch" onchange="toggleBrowseMode(this.checked)">
+                    <span class="slider"></span>
+                </label>
+                <span id="browseModeLabel" style="font-size: 0.9rem; white-space: nowrap;">
+                    🔄 浏览模式
+                </span>
+            </div>
+
             <div class="mode-selector">
                 <button type="button" class="mode-btn active" onclick="switchMode('manual')"> 手动选择</button>
                 <button type="button" class="mode-btn" onclick="switchMode('smart')"> 智能识别</button>
             </div>
-            
+
             <button type="button" class="btn btn-primary" onclick="loadPage()">
                 开始提取
             </button>
@@ -64,9 +75,12 @@
                             <div class="spinner"></div>
                             <p>正在加载页面...</p>
                         </div>
-                        
-                        <!-- iframe 预览 -->
+
+                        <!-- iframe 预览（静态模式） -->
                         <iframe id="previewFrame" class="preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+
+                        <!-- Canvas 预览（实时浏览模式） -->
+                        <div id="liveBrowserContainer" style="display: none; width: 100%; height: 100%; position: absolute; top: 0; left: 0; background: #000;"></div>
                     </div>
                 </div>
 
@@ -169,7 +183,81 @@
     <!-- JavaScript -->
     <!-- 🐛 调试脚本 - 用于追踪页面刷新问题 -->
     <script src="js/debug-refresh.js"></script>
+    <script src="js/live_browser.js"></script>
     <script src="js/index-v2.js"></script>
     <script src="js/login.js"></script>
+
+    <!-- Switch按钮样式 -->
+    <style>
+        /* Switch开关样式 */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #4CAF50;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        /* 浏览模式开启时的动画 */
+        input:checked + .slider {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+            }
+        }
+
+        #browseModeLabel {
+            color: #666;
+            transition: color 0.3s;
+        }
+
+        input:checked ~ #browseModeLabel {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+    </style>
 </body>
 </html>

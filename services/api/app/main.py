@@ -37,6 +37,10 @@ from typing import Dict
 
 from .routers.ai import router as ai_router
 
+# 实时浏览和智能分析
+from .live_browser import router as live_browser_router, start_cleanup_task
+from .smart_analyzer import url_analyzer
+
 from pydantic import BaseModel, Field
 from typing import Optional
 # ---------- 应用生命周期 ----------
@@ -44,6 +48,7 @@ from typing import Optional
 async def lifespan(app: FastAPI):
     # startup
     init_db()   # 确保表已创建
+    await start_cleanup_task()  # 启动会话清理任务
     yield
     # shutdown（需要清理时可在此处补充）
 
@@ -92,6 +97,7 @@ app.include_router(runs_jobs_router)                        # /jobs/{id}/run
 app.include_router(runs_router)
 app.include_router(proxy_router)  # 添加代理路由
 app.include_router(ai_router)  # 添加 AI 路由
+app.include_router(live_browser_router)  # 添加实时浏览路由
 # ... 后面的代码保持不变
 
 
@@ -219,6 +225,36 @@ async def smart_analyze(req: SmartAnalyzeRequest):  # 🔥 注意：参数是 re
         import traceback
         traceback.print_exc()
         return {"success": False, "error": str(e), "suggestions": []}
+
+
+# ---------- URL智能分析端点 ----------
+class URLAnalyzeRequest(BaseModel):
+    """URL分析请求"""
+    url: str = Field(..., description="要分析的URL")
+
+
+@app.post("/api/analyze-url")
+async def analyze_url_endpoint(req: URLAnalyzeRequest):
+    """智能分析URL，判断应该使用静态抓取还是实时浏览"""
+    try:
+        result = await url_analyzer.analyze(req.url)
+        return {
+            "success": True,
+            "url": req.url,
+            "method": result.method,
+            "reason": result.reason,
+            "confidence": result.confidence,
+            "quality_score": result.quality_score
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e),
+            "method": "realtime",  # 默认实时（更安全）
+            "reason": "分析失败，使用实时模式"
+        }
 
 
 

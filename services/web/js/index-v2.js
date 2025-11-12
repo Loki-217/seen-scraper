@@ -1420,6 +1420,205 @@ function suggestFieldNameLocal(element) {
     return `字段${configuredFields.length + 1}`;
 }
 
+// ==================== 实时浏览模式集成 ====================
+
+let liveBrowser = null;
+let isLiveBrowseMode = false;
+let currentRenderMethod = 'static';  // 'static' 或 'realtime'
+
+// 智能分析URL
+async function analyzeURL(url) {
+    try {
+        console.log('[Main] 智能分析URL:', url);
+
+        const response = await fetch(`${API_BASE}/api/analyze-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            console.log(`[Main] 分析结果: ${result.method} (${result.reason})`);
+            return result;
+        } else {
+            console.warn('[Main] 分析失败:', result.error);
+            return { method: 'static', reason: '分析失败，默认静态' };
+        }
+    } catch (error) {
+        console.error('[Main] 分析出错:', error);
+        return { method: 'static', reason: '分析异常，默认静态' };
+    }
+}
+
+// 浏览模式切换
+function toggleBrowseMode(enabled) {
+    isLiveBrowseMode = enabled;
+
+    console.log('[Main] 浏览模式切换:', enabled);
+
+    // 更新UI
+    const label = document.getElementById('browseModeLabel');
+    if (enabled) {
+        label.textContent = '🟢 浏览模式';
+        label.style.color = '#4CAF50';
+    } else {
+        label.textContent = '🔄 浏览模式';
+        label.style.color = '#666';
+    }
+
+    // 如果已有实时浏览实例，切换模式
+    if (liveBrowser && liveBrowser.isReady) {
+        liveBrowser.toggleBrowseMode(enabled);
+
+        if (enabled) {
+            showToast('✓ 已切换到纯浏览模式', 'success');
+        } else {
+            showToast('✓ 已切换到爬取模式（高亮）', 'success');
+        }
+    }
+}
+
+// 启动实时浏览
+async function startLiveBrowser(url) {
+    try {
+        console.log('[Main] 启动实时浏览:', url);
+
+        // 隐藏iframe，显示Canvas
+        document.getElementById('previewFrame').style.display = 'none';
+        document.getElementById('liveBrowserContainer').style.display = 'block';
+
+        // 创建LiveBrowser实例
+        if (!liveBrowser) {
+            liveBrowser = new LiveBrowser('liveBrowserContainer');
+        }
+
+        // 连接并启动
+        await liveBrowser.connect(url);
+
+        // 设置浏览模式状态
+        liveBrowser.toggleBrowseMode(isLiveBrowseMode);
+
+        console.log('[Main] 实时浏览启动成功');
+        showToast('✓ 实时浏览模式已启动', 'success');
+
+        currentRenderMethod = 'realtime';
+
+    } catch (error) {
+        console.error('[Main] 实时浏览启动失败:', error);
+        showToast('❌ 实时浏览启动失败: ' + error.message, 'error');
+
+        // 回退到静态模式
+        await fallbackToStatic(url);
+    }
+}
+
+// 回退到静态模式
+async function fallbackToStatic(url) {
+    console.log('[Main] 回退到静态模式');
+
+    // 断开实时浏览
+    if (liveBrowser) {
+        liveBrowser.disconnect();
+    }
+
+    // 显示iframe，隐藏Canvas
+    document.getElementById('previewFrame').style.display = 'block';
+    document.getElementById('liveBrowserContainer').style.display = 'none';
+
+    // 使用现有的静态加载逻辑
+    await loadPageStatic(url);
+
+    currentRenderMethod = 'static';
+}
+
+// 停止实时浏览
+function stopLiveBrowser() {
+    if (liveBrowser) {
+        liveBrowser.disconnect();
+        liveBrowser = null;
+    }
+
+    // 显示iframe，隐藏Canvas
+    document.getElementById('previewFrame').style.display = 'block';
+    document.getElementById('liveBrowserContainer').style.display = 'none';
+
+    currentRenderMethod = 'static';
+}
+
+// 修改原有的loadPage函数，集成智能分析
+const originalLoadPage = window.loadPage;
+
+window.loadPage = async function() {
+    const url = document.getElementById('urlInput').value.trim();
+
+    if (!url) {
+        showToast('请输入网页地址', 'error');
+        return;
+    }
+
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        showToast('URL必须以 http:// 或 https:// 开头', 'error');
+        return;
+    }
+
+    currentUrl = url;
+
+    // 显示加载状态
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+
+    try {
+        // 智能分析URL
+        console.log('[Main] 开始智能分析...');
+        const analysis = await analyzeURL(url);
+
+        if (analysis.method === 'realtime') {
+            console.log(`[Main] 使用实时浏览: ${analysis.reason}`);
+            showToast(`🤖 检测到需要实时浏览: ${analysis.reason}`, 'info', 4000);
+
+            // 启动实时浏览
+            await startLiveBrowser(url);
+
+        } else {
+            console.log(`[Main] 使用静态抓取: ${analysis.reason}`);
+
+            // 停止实时浏览（如果有）
+            stopLiveBrowser();
+
+            // 调用原有的静态加载逻辑
+            if (typeof originalLoadPage === 'function') {
+                await originalLoadPage();
+            }
+        }
+
+    } catch (error) {
+        console.error('[Main] 加载失败:', error);
+        showToast('❌ 加载失败: ' + error.message, 'error');
+    } finally {
+        // 隐藏加载状态
+        document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+};
+
+// 静态加载逻辑（从原函数中提取）
+async function loadPageStatic(url) {
+    // 这里保持原有的静态加载逻辑
+    // 由于代码太长，我们通过调用原函数来实现
+    if (typeof originalLoadPage === 'function') {
+        await originalLoadPage();
+    }
+}
+
+// 监听页面卸载，清理资源
+window.addEventListener('beforeunload', () => {
+    if (liveBrowser) {
+        liveBrowser.disconnect();
+    }
+});
+
+console.log('[Main] 实时浏览模式集成完成');
+
 // ==================== 初始化 ====================
 
 document.addEventListener('DOMContentLoaded', () => {
