@@ -3,7 +3,8 @@ from __future__ import annotations
 import sys
 import asyncio
 if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    # 🔥 修复：Windows必须使用ProactorEventLoop才能支持子进程（Playwright需要）
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from contextlib import asynccontextmanager
 from typing import Optional, List
