@@ -8,10 +8,16 @@ from playwright.async_api import async_playwright, Browser, Page, BrowserContext
 from pydantic import BaseModel
 from typing import Dict, Optional, Any
 import asyncio
+import sys
 import json
 import logging
 import time
 from datetime import datetime
+
+# 🔥 Windows修复：强制使用ProactorEventLoop（支持子进程）
+if sys.platform == 'win32':
+    # 设置全局策略
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 # 导入Cookie管理器
 from .cookie_manager import cookie_manager
@@ -49,6 +55,15 @@ class BrowserSession:
     async def start(self, url: str, use_cookies: bool = True):
         """启动浏览器会话"""
         try:
+            # 🔥 Windows修复：确保当前协程运行在ProactorEventLoop中
+            if sys.platform == 'win32':
+                loop = asyncio.get_running_loop()
+                loop_type = type(loop).__name__
+                if 'Selector' in loop_type:
+                    logger.error(f"[Session {self.session_id}] ❌ 检测到SelectorEventLoop，Playwright需要ProactorEventLoop")
+                    raise RuntimeError("Windows平台需要ProactorEventLoop才能运行Playwright（支持子进程）")
+                logger.info(f"[Session {self.session_id}] ✅ 事件循环类型: {loop_type}")
+
             self.current_url = url
             self.current_domain = self._extract_domain(url)
 
