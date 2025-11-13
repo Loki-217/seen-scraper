@@ -82,6 +82,9 @@ class LiveBrowser {
         this.showLoading('正在启动浏览器...');
 
         return new Promise((resolve, reject) => {
+            let connectionTimeout = null;
+            let startTime = Date.now();
+
             this.ws = new WebSocket(wsUrl);
 
             this.ws.onopen = () => {
@@ -93,6 +96,8 @@ class LiveBrowser {
                     url: url,
                     use_cookies: true
                 }));
+
+                console.log('[LiveBrowser] 初始化消息已发送，等待浏览器启动...');
             };
 
             this.ws.onmessage = (event) => {
@@ -100,28 +105,66 @@ class LiveBrowser {
                 this.handleMessage(message);
 
                 if (message.type === 'ready') {
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    console.log(`[LiveBrowser] 浏览器就绪 (耗时: ${elapsed}秒)`);
+
+                    // 清除超时定时器
+                    if (connectionTimeout) {
+                        clearTimeout(connectionTimeout);
+                        connectionTimeout = null;
+                    }
+
                     resolve();
+                } else if (message.type === 'progress') {
+                    // 处理进度消息（保持连接活跃）
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+                    console.log(`[LiveBrowser] ${message.message} (${elapsed}秒)`);
+                    this.showLoading(`${message.message}... (${elapsed}s)`);
                 }
             };
 
             this.ws.onerror = (error) => {
                 console.error('[LiveBrowser] WebSocket错误:', error);
                 this.showError('连接失败');
+
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+
                 reject(error);
             };
 
-            this.ws.onclose = () => {
-                console.log('[LiveBrowser] WebSocket关闭');
+            this.ws.onclose = (event) => {
+                console.log('[LiveBrowser] WebSocket关闭, code:', event.code, 'reason:', event.reason);
                 this.isReady = false;
-                this.showError('连接已断开');
+
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+
+                // 如果还没resolve，说明是异常关闭
+                if (!this.isReady) {
+                    this.showError('连接已断开');
+                }
             };
 
-            // 5秒超时
-            setTimeout(() => {
+            // 60秒超时（足够浏览器启动）
+            connectionTimeout = setTimeout(() => {
                 if (!this.isReady) {
-                    reject(new Error('连接超时'));
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+                    console.error(`[LiveBrowser] 连接超时 (${elapsed}秒)`);
+                    this.showError(`连接超时 (${elapsed}秒)`);
+
+                    // 关闭WebSocket
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.close();
+                    }
+
+                    reject(new Error(`连接超时 (${elapsed}秒)`));
                 }
-            }, 5000);
+            }, 60000);  // 60秒超时
         });
     }
 

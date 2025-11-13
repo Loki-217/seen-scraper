@@ -52,8 +52,17 @@ class BrowserSession:
 
         logger.info(f"[Session {session_id}] 创建浏览器会话")
 
-    async def start(self, url: str, use_cookies: bool = True):
+    async def start(self, url: str, use_cookies: bool = True, websocket: Optional[WebSocket] = None):
         """启动浏览器会话"""
+        async def send_progress(msg: str):
+            """发送进度消息"""
+            if websocket:
+                try:
+                    await websocket.send_json({'type': 'progress', 'message': msg})
+                except:
+                    pass
+            logger.info(f"[Session {self.session_id}] {msg}")
+
         try:
             # 🔥 Windows修复：确保当前协程运行在ProactorEventLoop中
             if sys.platform == 'win32':
@@ -67,12 +76,14 @@ class BrowserSession:
             self.current_url = url
             self.current_domain = self._extract_domain(url)
 
-            logger.info(f"[Session {self.session_id}] 启动浏览器: {url}")
+            await send_progress('初始化Playwright')
 
             # 启动Playwright
             self.playwright = await async_playwright().start()
 
-            # 启动浏览器
+            await send_progress('启动Chromium浏览器')
+
+            # 启动浏览器（这步耗时最长）
             self.browser = await self.playwright.chromium.launch(
                 headless=True,
                 args=[
@@ -83,6 +94,8 @@ class BrowserSession:
                 ]
             )
 
+            await send_progress('创建浏览器上下文')
+
             # 创建浏览器上下文
             self.context = await self.browser.new_context(
                 viewport={'width': 1280, 'height': 720},
@@ -91,13 +104,18 @@ class BrowserSession:
 
             # 如果需要使用Cookie，注入已保存的Cookie
             if use_cookies:
+                await send_progress('注入Cookie')
                 await self._inject_cookies()
+
+            await send_progress('创建页面')
 
             # 创建页面
             self.page = await self.context.new_page()
 
             # 获取CDP会话
             self.cdp_session = await self.context.new_cdp_session(self.page)
+
+            await send_progress(f'加载页面: {url[:50]}...')
 
             # 导航到URL
             await self.page.goto(url, wait_until='domcontentloaded', timeout=30000)
@@ -497,8 +515,14 @@ async def live_browser_websocket(websocket: WebSocket, session_id: str):
 
         logger.info(f"[Session {session_id}] 收到初始化请求: {url}")
 
-        # 启动浏览器会话
-        await session.start(url, use_cookies=use_cookies)
+        # 启动浏览器会话（这步耗时约30秒，会发送进度消息）
+        await session.start(url, use_cookies=use_cookies, websocket=websocket)
+
+        # 发送进度消息：准备屏幕录制
+        await websocket.send_json({
+            'type': 'progress',
+            'message': '准备屏幕录制'
+        })
 
         # 开始屏幕录制
         await session.start_screencast(websocket)
