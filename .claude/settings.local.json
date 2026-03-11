@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(\"e:/seen-scraper/.venv/Scripts/python.exe\" -m uvicorn:*)",
+      "Bash(\"e:/seen-scraper/.venv/Scripts/python.exe\" -m http.server 3000)"
+    ]
+  }
+}

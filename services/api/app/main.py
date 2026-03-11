@@ -37,6 +37,18 @@ from typing import Dict
 
 from .routers.ai import router as ai_router
 
+# V2: Session Manager 和 Browser 路由
+from .routers.browser import router as browser_router
+from .routers.smart import router as smart_router
+from .session_manager import session_manager
+
+# V2: 调度器
+from .scheduler import scheduler
+
+# V2: Robot 和 Schedule 路由
+from .routers.robots import router as robots_router
+from .routers.schedules import router as schedules_router, runs_router as scheduled_runs_router
+
 from pydantic import BaseModel, Field
 from typing import Optional
 # ---------- 应用生命周期 ----------
@@ -44,8 +56,18 @@ from typing import Optional
 async def lifespan(app: FastAPI):
     # startup
     init_db()   # 确保表已创建
+    # V2: 启动 Session Manager
+    await session_manager.start()
+    print("[SeenFetch] Session Manager 已启动")
+    # V2: 启动调度器
+    await scheduler.start()
+    print("[SeenFetch] Scheduler 已启动")
     yield
-    # shutdown（需要清理时可在此处补充）
+    # shutdown
+    await scheduler.stop()
+    print("[SeenFetch] Scheduler 已停止")
+    await session_manager.stop()
+    print("[SeenFetch] Session Manager 已停止")
 
 
 # ---------- 创建应用 ----------
@@ -92,7 +114,11 @@ app.include_router(runs_jobs_router)                        # /jobs/{id}/run
 app.include_router(runs_router)
 app.include_router(proxy_router)  # 添加代理路由
 app.include_router(ai_router)  # 添加 AI 路由
-# ... 后面的代码保持不变
+app.include_router(browser_router)  # V2: Session/Browser API
+app.include_router(smart_router)    # V2: 智能识别 API
+app.include_router(robots_router)   # V2: Robot API
+app.include_router(schedules_router)  # V2: Schedule API
+app.include_router(scheduled_runs_router)  # V2: Scheduled Run API
 
 
 # ---------- 品牌data端点 ----------
