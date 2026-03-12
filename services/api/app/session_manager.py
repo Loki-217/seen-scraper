@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import uuid
 import sys
 from datetime import datetime, timedelta
@@ -52,6 +53,12 @@ class BrowserSession:
         self.viewport = viewport
         self.created_at = datetime.utcnow()
         self.last_active = datetime.utcnow()
+        # CDP Screencast
+        self.cdp_session = None
+        self.screencast_active = False
+        self.websockets: set = set()
+        self.frame_count = 0
+        self._last_frame: Optional[str] = None  # Cache latest frame for new WS clients
 
     def touch(self):
         """更新最后活动时间"""
@@ -363,8 +370,102 @@ class BrowserSession:
             raise ValueError("导航操作需要提供 url")
         await self.page.goto(action.url, wait_until="networkidle", timeout=30000)
 
+    # ---------- CDP Screencast ----------
+
+    async def start_screencast(self, quality: int = 80, max_width: int = 1280, max_height: int = 800):
+        """Start CDP Screencast frame push"""
+        self.cdp_session = await self.page.context.new_cdp_session(self.page)
+        self.cdp_session.on("Page.screencastFrame", self._on_screencast_frame)
+        await self.cdp_session.send("Page.startScreencast", {
+            "format": "jpeg",
+            "quality": quality,
+            "maxWidth": max_width,
+            "maxHeight": max_height,
+            "everyNthFrame": 1
+        })
+        self.screencast_active = True
+
+    async def _on_screencast_frame(self, params: dict):
+        """Broadcast frame to all connected WebSocket clients"""
+        await self.cdp_session.send("Page.screencastFrameAck", {
+            "sessionId": params["sessionId"]
+        })
+        self.frame_count += 1
+        self.touch()
+
+        message = json.dumps({
+            "type": "frame",
+            "data": params["data"],
+            "metadata": params.get("metadata", {})
+        })
+        self._last_frame = message  # Cache for new clients
+
+        dead_sockets = set()
+        for ws in self.websockets:
+            try:
+                await ws.send_text(message)
+            except Exception:
+                dead_sockets.add(ws)
+        self.websockets -= dead_sockets
+
+    async def stop_screencast(self):
+        """Stop CDP Screencast"""
+        if self.cdp_session and self.screencast_active:
+            try:
+                await self.cdp_session.send("Page.stopScreencast")
+            except Exception:
+                pass
+            self.screencast_active = False
+
+    async def inject_input(self, event: dict):
+        """Inject mouse/keyboard events via CDP"""
+        if not self.cdp_session:
+            return
+        event_type = event.get("type")
+        if event_type in ("mousePressed", "mouseReleased", "mouseMoved"):
+            await self.cdp_session.send("Input.dispatchMouseEvent", {
+                "type": event_type,
+                "x": event["x"],
+                "y": event["y"],
+                "button": event.get("button", "left"),
+                "clickCount": event.get("clickCount", 1)
+            })
+        elif event_type == "mouseWheel":
+            await self.cdp_session.send("Input.dispatchMouseEvent", {
+                "type": "mouseWheel",
+                "x": event.get("x", 0),
+                "y": event.get("y", 0),
+                "deltaX": event.get("deltaX", 0),
+                "deltaY": event.get("deltaY", 300)
+            })
+        elif event_type in ("keyDown", "keyUp"):
+            await self.cdp_session.send("Input.dispatchKeyEvent", {
+                "type": event_type,
+                "key": event.get("key", ""),
+                "code": event.get("code", ""),
+                "text": event.get("text", "")
+            })
+
+    async def add_websocket(self, ws):
+        self.websockets.add(ws)
+        # Send cached last frame so the client sees something immediately
+        if self._last_frame:
+            try:
+                await ws.send_text(self._last_frame)
+            except Exception:
+                pass
+
+    async def remove_websocket(self, ws):
+        self.websockets.discard(ws)
+
     async def close(self):
         """关闭会话"""
+        await self.stop_screencast()
+        try:
+            if self.cdp_session:
+                await self.cdp_session.detach()
+        except:
+            pass
         try:
             await self.page.close()
         except:
@@ -513,16 +614,22 @@ class SessionManager:
 
         self.sessions[session_id] = session
 
-        # 获取初始状态
-        screenshot = await session.screenshot()
+        # Start CDP Screencast
+        await session.start_screencast(
+            quality=80,
+            max_width=viewport_width,
+            max_height=viewport_height
+        )
+
+        # Get initial state
         elements = await session.get_elements()
         title = await page.title()
 
-        print(f"[SessionManager] 创建会话 {session_id[:8]}... URL: {url}")
+        print(f"[SessionManager] 创建会话 {session_id[:8]}... URL: {url} (CDP Screencast)")
 
         return CreateSessionResponse(
             session_id=session_id,
-            screenshot=screenshot,
+            screenshot="",  # Frames are pushed via WebSocket now
             elements=elements,
             page_info=PageInfo(
                 url=page.url,

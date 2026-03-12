@@ -11,7 +11,7 @@ V2 Session API 路由
 - POST   /sessions/{id}/detect-pagination  检测翻页方式
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 from typing import Optional, List
 
 from ..session_manager import session_manager
@@ -319,3 +319,78 @@ async def test_pagination(session_id: str, config: PaginationConfig):
             "message": f"测试失败: {str(e)}",
             "has_next": False
         }
+
+
+@router.websocket("/ws/{session_id}")
+async def websocket_screencast(websocket: WebSocket, session_id: str):
+    """
+    Bidirectional WebSocket for CDP Screencast frames and input injection.
+
+    Server → Client: frame, elements, pageInfo, analyzeResult, similarElements
+    Client → Server: mouse/keyboard events, getElements, analyze, findSimilar
+    """
+    await websocket.accept()
+
+    session = session_manager.get_session(session_id)
+    if not session:
+        await websocket.close(code=4004, reason="Session not found")
+        return
+
+    await session.add_websocket(websocket)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            event_type = data.get("type")
+
+            # Mouse and keyboard events → inject into browser
+            if event_type in ("mousePressed", "mouseReleased", "mouseMoved", "mouseWheel", "keyDown", "keyUp"):
+                await session.inject_input(data)
+
+            # Request element list
+            elif event_type == "getElements":
+                elements = await session.get_elements()
+                await websocket.send_json({
+                    "type": "elements",
+                    "elements": [el.dict() for el in elements]
+                })
+
+            # Smart analysis
+            elif event_type == "analyze":
+                from ..services.list_detector import ListDetector
+                from ..services.pagination_detector import PaginationDetector as PgDetector
+                detector = ListDetector()
+                lists = await detector.detect_lists(session.page)
+                pg_detector = PgDetector()
+                pg_results = await pg_detector.detect(session.page)
+                await websocket.send_json({
+                    "type": "analyzeResult",
+                    "lists": [lst.dict() for lst in lists],
+                    "pagination": [p.dict() for p in pg_results]
+                })
+
+            # Find similar elements
+            elif event_type == "findSimilar":
+                selector = data.get("selector", "")
+                result = await session.page.evaluate('''(selector) => {
+                    try {
+                        const els = document.querySelectorAll(selector);
+                        return Array.from(els).map(el => {
+                            const rect = el.getBoundingClientRect();
+                            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                        });
+                    } catch(e) { return []; }
+                }''', selector)
+                await websocket.send_json({
+                    "type": "similarElements",
+                    "selector": selector,
+                    "rects": result,
+                    "count": len(result)
+                })
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"[WebSocket] Error: {e}")
+    finally:
+        await session.remove_websocket(websocket)

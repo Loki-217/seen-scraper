@@ -1,11 +1,12 @@
 /**
- * SeenFetch V2 - Browser Canvas 交互层
+ * SeenFetch V2 - Browser Canvas (CDP Screencast Mode)
  *
- * 功能:
- * - 显示后端返回的页面截图
- * - 渲染可交互元素高亮覆盖层
- * - 捕获用户点击/悬停事件
- * - 与后端 Session API 通信
+ * Receives real-time JPEG frames via WebSocket from CDP Screencast.
+ * User interactions are sent back through the same WebSocket.
+ *
+ * Left click  → select/deselect element (frontend only)
+ * Right click → inject click into remote browser via CDP
+ * Wheel       → inject scroll into remote browser via CDP
  */
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -17,65 +18,62 @@ class BrowserCanvas {
             throw new Error(`Container not found: ${containerId}`);
         }
 
+        this.ws = null;
         this.sessionId = null;
         this.elements = [];
         this.hoveredElement = null;
         this.selectedElements = [];
         this.isLoading = false;
         this.scale = 1;
+        this._frameCount = 0;
+        this._lastFrameTime = 0;
+        this._fps = 0;
+        this._fpsInterval = null;
 
-        // 创建 Canvas 结构
-        this._createCanvas();
+        this._createDOM();
         this._bindEvents();
     }
 
-    _createCanvas() {
-        // 清空容器
+    _createDOM() {
         this.container.innerHTML = '';
 
-        // 创建 wrapper
+        // Wrapper
         this.wrapper = document.createElement('div');
         this.wrapper.className = 'browser-canvas-wrapper';
         this.wrapper.style.cssText = `
             position: relative;
             width: 100%;
             height: 100%;
-            overflow: auto;
-            background: #f5f5f5;
+            overflow: hidden;
+            background: #1a1a1a;
         `;
 
-        // 创建截图显示层
-        this.imageLayer = document.createElement('div');
-        this.imageLayer.className = 'browser-canvas-image';
-        this.imageLayer.style.cssText = `
-            position: relative;
-            display: inline-block;
-            min-width: 100%;
-            min-height: 100%;
-        `;
-
-        // 截图 img
-        this.screenshotImg = document.createElement('img');
-        this.screenshotImg.className = 'browser-screenshot';
-        this.screenshotImg.style.cssText = `
+        // Frame image (receives CDP Screencast JPEG frames)
+        this.frameImg = document.createElement('img');
+        this.frameImg.className = 'browser-frame';
+        this.frameImg.style.cssText = `
             display: block;
-            max-width: none;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
             user-select: none;
             -webkit-user-drag: none;
         `;
 
-        // 创建覆盖层 (用于高亮元素)
-        this.overlayCanvas = document.createElement('canvas');
-        this.overlayCanvas.className = 'browser-overlay';
-        this.overlayCanvas.style.cssText = `
+        // Overlay canvas for element highlights
+        this.overlay = document.createElement('canvas');
+        this.overlay.className = 'browser-overlay';
+        this.overlay.style.cssText = `
             position: absolute;
             top: 0;
             left: 0;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
         `;
-        this.ctx = this.overlayCanvas.getContext('2d');
+        this.ctx = this.overlay.getContext('2d');
 
-        // 创建交互层 (捕获点击)
+        // Interaction layer (captures mouse/keyboard events)
         this.interactionLayer = document.createElement('div');
         this.interactionLayer.className = 'browser-interaction';
         this.interactionLayer.style.cssText = `
@@ -87,28 +85,7 @@ class BrowserCanvas {
             cursor: crosshair;
         `;
 
-        // 创建加载层
-        this.loadingLayer = document.createElement('div');
-        this.loadingLayer.className = 'browser-loading hidden';
-        this.loadingLayer.innerHTML = `
-            <div class="spinner"></div>
-            <p>正在加载...</p>
-        `;
-        this.loadingLayer.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: rgba(255,255,255,0.9);
-            z-index: 100;
-        `;
-
-        // 创建信息提示
+        // Tooltip
         this.tooltip = document.createElement('div');
         this.tooltip.className = 'browser-tooltip';
         this.tooltip.style.cssText = `
@@ -125,72 +102,92 @@ class BrowserCanvas {
             word-break: break-all;
         `;
 
-        // 组装
-        this.imageLayer.appendChild(this.screenshotImg);
-        this.imageLayer.appendChild(this.overlayCanvas);
-        this.imageLayer.appendChild(this.interactionLayer);
-        this.wrapper.appendChild(this.imageLayer);
-        this.wrapper.appendChild(this.loadingLayer);
+        // Loading overlay
+        this.loadingOverlay = document.createElement('div');
+        this.loadingOverlay.className = 'browser-loading hidden';
+        this.loadingOverlay.innerHTML = `
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        `;
+        this.loadingOverlay.style.cssText = `
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.9);
+            z-index: 100;
+        `;
+
+        // Assemble
+        this.wrapper.appendChild(this.frameImg);
+        this.wrapper.appendChild(this.overlay);
+        this.wrapper.appendChild(this.interactionLayer);
+        this.wrapper.appendChild(this.loadingOverlay);
         this.container.appendChild(this.wrapper);
         document.body.appendChild(this.tooltip);
     }
 
     _bindEvents() {
-        // 鼠标移动 - 高亮元素
+        // Mouse move → find hovered element → update overlay + tooltip
         this.interactionLayer.addEventListener('mousemove', (e) => this._handleMouseMove(e));
 
-        // 鼠标离开
+        // Mouse leave
         this.interactionLayer.addEventListener('mouseleave', () => {
             this.hoveredElement = null;
             this._renderOverlay();
             this.tooltip.style.display = 'none';
         });
 
-        // 点击
+        // Left click → select/deselect element (frontend only, not sent to browser)
         this.interactionLayer.addEventListener('click', (e) => this._handleClick(e));
 
-        // 右键 - 执行真实点击
+        // Right click → inject real click into remote browser via CDP
         this.interactionLayer.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             this._handleRealClick(e);
         });
 
-        // 滚轮 - 滚动页面或缩放
+        // Wheel → inject scroll into remote browser via CDP
         this.interactionLayer.addEventListener('wheel', (e) => {
             e.preventDefault();
-            if (e.ctrlKey) {
-                // Ctrl + 滚轮缩放
-                const delta = e.deltaY > 0 ? -0.1 : 0.1;
-                this.scale = Math.max(0.5, Math.min(2, this.scale + delta));
-                this._applyScale();
-            } else {
-                // 普通滚轮 - 滚动远程页面
-                this._handleWheel(e);
-            }
+            this._handleWheel(e);
         });
 
-        // 键盘事件
+        // Escape → clear selection
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                this.selectedElements = [];
-                this._renderOverlay();
+                this.clearSelection();
             }
+        });
+
+        // Update overlay when frame loads (to sync canvas dimensions)
+        this.frameImg.addEventListener('load', () => {
+            this._renderOverlay();
         });
     }
 
-    _getCoordinates(e) {
-        const rect = this.screenshotImg.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / this.scale;
-        const y = (e.clientY - rect.top) / this.scale;
-        return { x: Math.round(x), y: Math.round(y) };
+    // ---------- Coordinate conversion ----------
+
+    _getCoords(e) {
+        const rect = this.frameImg.getBoundingClientRect();
+        if (!this.frameImg.naturalWidth || !rect.width) return { x: 0, y: 0 };
+        const scaleX = this.frameImg.naturalWidth / rect.width;
+        const scaleY = this.frameImg.naturalHeight / rect.height;
+        return {
+            x: Math.round((e.clientX - rect.left) * scaleX),
+            y: Math.round((e.clientY - rect.top) * scaleY)
+        };
     }
+
+    // ---------- Event handlers ----------
 
     _handleMouseMove(e) {
         if (!this.elements.length) return;
 
-        const { x, y } = this._getCoordinates(e);
-
-        // 查找鼠标下的元素
+        const { x, y } = this._getCoords(e);
         const element = this._findElementAt(x, y);
 
         if (element !== this.hoveredElement) {
@@ -198,12 +195,11 @@ class BrowserCanvas {
             this._renderOverlay();
         }
 
-        // 更新 tooltip
         if (element) {
             this.tooltip.innerHTML = `
-                <div><strong>${element.tag}</strong> ${element.element_type}</div>
-                <div style="color: #aaa; font-size: 11px;">${element.selector}</div>
-                ${element.text ? `<div style="margin-top: 4px;">"${element.text}"</div>` : ''}
+                <div><strong>${escapeHtml(element.tag)}</strong> ${escapeHtml(element.element_type)}</div>
+                <div style="color: #aaa; font-size: 11px;">${escapeHtml(element.selector)}</div>
+                ${element.text ? `<div style="margin-top: 4px;">"${escapeHtml(element.text)}"</div>` : ''}
             `;
             this.tooltip.style.display = 'block';
             this.tooltip.style.left = (e.clientX + 15) + 'px';
@@ -214,11 +210,10 @@ class BrowserCanvas {
     }
 
     _handleClick(e) {
-        const { x, y } = this._getCoordinates(e);
+        const { x, y } = this._getCoords(e);
         const element = this._findElementAt(x, y);
 
         if (element) {
-            // 切换选中状态
             const index = this.selectedElements.findIndex(el => el.selector === element.selector);
             if (index >= 0) {
                 this.selectedElements.splice(index, 1);
@@ -227,77 +222,36 @@ class BrowserCanvas {
             }
             this._renderOverlay();
 
-            // 触发自定义事件
             this.container.dispatchEvent(new CustomEvent('elementSelect', {
                 detail: { element, selected: this.selectedElements }
             }));
         }
     }
 
-    async _handleRealClick(e) {
-        if (!this.sessionId) return;
+    _handleRealClick(e) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-        const { x, y } = this._getCoordinates(e);
-        this._showLoading('正在执行点击...');
-
-        try {
-            const result = await this.executeAction({
-                type: 'click',
-                x: x,
-                y: y
-            });
-
-            if (result.success) {
-                // 触发页面变化事件
-                this.container.dispatchEvent(new CustomEvent('pageChange', {
-                    detail: { url: result.url, title: result.title }
-                }));
-            }
-        } catch (error) {
-            console.error('Click failed:', error);
-        }
-
-        this._hideLoading();
+        const { x, y } = this._getCoords(e);
+        this.ws.send(JSON.stringify({ type: 'mousePressed', x, y, button: 'left', clickCount: 1 }));
+        this.ws.send(JSON.stringify({ type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }));
     }
-
-    // 处理滚轮滚动 - 节流处理避免频繁请求
-    _scrollThrottleTimer = null;
-    _pendingScrollY = 0;
 
     _handleWheel(e) {
-        if (!this.sessionId) return;
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-        // 累积滚动距离
-        this._pendingScrollY += e.deltaY;
-
-        // 节流：100ms 内只发送一次请求
-        if (this._scrollThrottleTimer) return;
-
-        this._scrollThrottleTimer = setTimeout(async () => {
-            const distance = Math.abs(this._pendingScrollY);
-            const direction = this._pendingScrollY > 0 ? 'down' : 'up';
-
-            // 重置
-            this._pendingScrollY = 0;
-            this._scrollThrottleTimer = null;
-
-            // 最小滚动距离
-            if (distance < 50) return;
-
-            try {
-                await this.executeAction({
-                    type: 'scroll',
-                    direction: direction,
-                    distance: Math.min(distance, 500)  // 最大单次滚动 500px
-                });
-            } catch (error) {
-                console.error('Scroll failed:', error);
-            }
-        }, 50);
+        const { x, y } = this._getCoords(e);
+        this.ws.send(JSON.stringify({
+            type: 'mouseWheel',
+            x, y,
+            deltaX: e.deltaX,
+            deltaY: e.deltaY
+        }));
     }
 
+    // ---------- Element lookup ----------
+
     _findElementAt(x, y) {
-        // 从后往前找（后面的元素在上层）
+        // Search from back to front (later elements are on top)
         for (let i = this.elements.length - 1; i >= 0; i--) {
             const el = this.elements[i];
             const r = el.rect;
@@ -308,20 +262,20 @@ class BrowserCanvas {
         return null;
     }
 
+    // ---------- Overlay rendering ----------
+
     _renderOverlay() {
-        if (!this.screenshotImg.naturalWidth) return;
+        if (!this.frameImg.naturalWidth) return;
 
-        const width = this.screenshotImg.naturalWidth;
-        const height = this.screenshotImg.naturalHeight;
+        const width = this.frameImg.naturalWidth;
+        const height = this.frameImg.naturalHeight;
 
-        this.overlayCanvas.width = width;
-        this.overlayCanvas.height = height;
-        this.overlayCanvas.style.width = width * this.scale + 'px';
-        this.overlayCanvas.style.height = height * this.scale + 'px';
+        this.overlay.width = width;
+        this.overlay.height = height;
 
         this.ctx.clearRect(0, 0, width, height);
 
-        // 绘制所有可交互元素（淡色）
+        // All elements - light blue outline
         this.elements.forEach(el => {
             const r = el.rect;
             this.ctx.strokeStyle = 'rgba(102, 126, 234, 0.2)';
@@ -329,17 +283,17 @@ class BrowserCanvas {
             this.ctx.strokeRect(r.x, r.y, r.width, r.height);
         });
 
-        // 绘制选中的元素（绿色）
+        // Selected elements - green fill + thick border
         this.selectedElements.forEach(el => {
             const r = el.rect;
-            this.ctx.strokeStyle = 'rgba(76, 175, 80, 0.8)';
-            this.ctx.fillStyle = 'rgba(76, 175, 80, 0.1)';
+            this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
+            this.ctx.fillStyle = 'rgba(16, 185, 129, 0.1)';
             this.ctx.lineWidth = 3;
             this.ctx.fillRect(r.x, r.y, r.width, r.height);
             this.ctx.strokeRect(r.x, r.y, r.width, r.height);
         });
 
-        // 绘制悬停的元素（蓝色高亮）
+        // Hovered element - blue fill + thick border
         if (this.hoveredElement) {
             const r = this.hoveredElement.rect;
             this.ctx.strokeStyle = 'rgba(102, 126, 234, 0.8)';
@@ -350,34 +304,79 @@ class BrowserCanvas {
         }
     }
 
-    _applyScale() {
-        const width = this.screenshotImg.naturalWidth * this.scale;
-        const height = this.screenshotImg.naturalHeight * this.scale;
+    // ---------- Loading ----------
 
-        this.screenshotImg.style.width = width + 'px';
-        this.screenshotImg.style.height = height + 'px';
-        this.overlayCanvas.style.width = width + 'px';
-        this.overlayCanvas.style.height = height + 'px';
-    }
-
-    _showLoading(message = '正在加载...') {
+    _showLoading(message = 'Loading...') {
         this.isLoading = true;
-        this.loadingLayer.querySelector('p').textContent = message;
-        this.loadingLayer.classList.remove('hidden');
+        this.loadingOverlay.querySelector('p').textContent = message;
+        this.loadingOverlay.classList.remove('hidden');
     }
 
     _hideLoading() {
         this.isLoading = false;
-        this.loadingLayer.classList.add('hidden');
+        this.loadingOverlay.classList.add('hidden');
     }
 
-    // ============ 公共 API ============
+    // ---------- WebSocket ----------
+
+    _connectWebSocket() {
+        const wsUrl = `ws://127.0.0.1:8000/sessions/ws/${this.sessionId}`;
+        this.ws = new WebSocket(wsUrl);
+
+        this.ws.onopen = () => {
+            console.log('[BrowserCanvas] WebSocket connected');
+            // Request initial elements
+            this.requestElements();
+        };
+
+        this.ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+
+            if (msg.type === 'frame') {
+                this.frameImg.src = 'data:image/jpeg;base64,' + msg.data;
+                this._frameCount++;
+            } else if (msg.type === 'elements') {
+                this.elements = msg.elements || [];
+                this._renderOverlay();
+                this.container.dispatchEvent(new CustomEvent('elementsUpdated', {
+                    detail: { elements: this.elements, count: this.elements.length }
+                }));
+            } else if (msg.type === 'analyzeResult') {
+                this.container.dispatchEvent(new CustomEvent('analyzeResult', {
+                    detail: { lists: msg.lists, pagination: msg.pagination }
+                }));
+            } else if (msg.type === 'similarElements') {
+                this.container.dispatchEvent(new CustomEvent('similarFound', {
+                    detail: { selector: msg.selector, rects: msg.rects, count: msg.count }
+                }));
+            }
+        };
+
+        this.ws.onclose = () => {
+            console.log('[BrowserCanvas] WebSocket disconnected');
+        };
+
+        this.ws.onerror = (err) => {
+            console.error('[BrowserCanvas] WebSocket error:', err);
+        };
+
+        // FPS counter
+        this._fpsInterval = setInterval(() => {
+            this._fps = this._frameCount;
+            this._frameCount = 0;
+            this.container.dispatchEvent(new CustomEvent('fpsUpdate', {
+                detail: { fps: this._fps }
+            }));
+        }, 1000);
+    }
+
+    // ============ Public API ============
 
     /**
-     * 初始化会话 - 加载 URL
+     * Initialize session - load URL and connect WebSocket
      */
     async initSession(url, options = {}) {
-        this._showLoading('正在加载页面...');
+        this._showLoading('Loading page...');
 
         try {
             const response = await fetch(`${API_BASE}/sessions`, {
@@ -385,8 +384,8 @@ class BrowserCanvas {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     url: url,
-                    viewport_width: options.viewportWidth || 1920,
-                    viewport_height: options.viewportHeight || 1080,
+                    viewport_width: options.viewportWidth || 1280,
+                    viewport_height: options.viewportHeight || 800,
                     wait_for: options.waitFor || null,
                     timeout_ms: options.timeout || 30000
                 })
@@ -398,14 +397,13 @@ class BrowserCanvas {
             }
 
             const data = await response.json();
-
             this.sessionId = data.session_id;
             this.elements = data.elements || [];
 
-            // 显示截图
-            this._renderScreenshot(data.screenshot);
+            // Connect WebSocket for frame streaming
+            this._connectWebSocket();
 
-            // 触发加载完成事件
+            // Fire sessionReady event
             this.container.dispatchEvent(new CustomEvent('sessionReady', {
                 detail: {
                     sessionId: this.sessionId,
@@ -428,136 +426,36 @@ class BrowserCanvas {
     }
 
     /**
-     * 渲染截图
-     */
-    _renderScreenshot(base64Image) {
-        return new Promise((resolve) => {
-            this.screenshotImg.onload = () => {
-                const width = this.screenshotImg.naturalWidth;
-                const height = this.screenshotImg.naturalHeight;
-
-                // 设置交互层尺寸
-                this.interactionLayer.style.width = width + 'px';
-                this.interactionLayer.style.height = height + 'px';
-
-                this._applyScale();
-                this._renderOverlay();
-                resolve();
-            };
-
-            // 处理 base64 前缀
-            if (!base64Image.startsWith('data:')) {
-                base64Image = `data:image/jpeg;base64,${base64Image}`;
-            }
-            this.screenshotImg.src = base64Image;
-        });
-    }
-
-    /**
-     * 执行操作
-     */
-    async executeAction(action) {
-        if (!this.sessionId) {
-            throw new Error('No active session');
-        }
-
-        try {
-            const response = await fetch(`${API_BASE}/sessions/${this.sessionId}/actions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(action)
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || `HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
-
-            if (result.success) {
-                // 更新截图和元素
-                await this._renderScreenshot(result.screenshot_base64);
-                this.elements = result.elements || [];
-                this._renderOverlay();
-            }
-
-            return result;
-
-        } catch (error) {
-            console.error('Execute action failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * 滚动页面
-     */
-    async scroll(direction = 'down', distance = 300) {
-        this._showLoading('正在滚动...');
-        try {
-            return await this.executeAction({
-                type: 'scroll',
-                direction: direction,
-                distance: distance
-            });
-        } finally {
-            this._hideLoading();
-        }
-    }
-
-    /**
-     * 刷新状态
-     */
-    async refreshState() {
-        if (!this.sessionId) return;
-
-        this._showLoading('正在刷新...');
-
-        try {
-            const response = await fetch(`${API_BASE}/sessions/${this.sessionId}/state`);
-            if (!response.ok) throw new Error('Failed to get state');
-
-            const state = await response.json();
-
-            await this._renderScreenshot(state.screenshot);
-            this.elements = state.elements || [];
-            this._renderOverlay();
-
-            return state;
-        } finally {
-            this._hideLoading();
-        }
-    }
-
-    /**
-     * 关闭会话
+     * Close session and WebSocket
      */
     async closeSession() {
-        if (!this.sessionId) return;
-
-        try {
-            await fetch(`${API_BASE}/sessions/${this.sessionId}`, {
-                method: 'DELETE'
-            });
-        } catch (error) {
-            console.error('Close session failed:', error);
+        if (this._fpsInterval) {
+            clearInterval(this._fpsInterval);
+            this._fpsInterval = null;
         }
 
-        this.sessionId = null;
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+        }
+
+        if (this.sessionId) {
+            try {
+                await fetch(`${API_BASE}/sessions/${this.sessionId}`, { method: 'DELETE' });
+            } catch (error) {
+                console.error('Close session failed:', error);
+            }
+            this.sessionId = null;
+        }
+
         this.elements = [];
         this.selectedElements = [];
+        this.hoveredElement = null;
+        this._renderOverlay();
     }
 
     /**
-     * 获取选中的元素
-     */
-    getSelectedElements() {
-        return [...this.selectedElements];
-    }
-
-    /**
-     * 清除选中
+     * Clear element selection
      */
     clearSelection() {
         this.selectedElements = [];
@@ -565,24 +463,41 @@ class BrowserCanvas {
     }
 
     /**
-     * 根据选择器查找并高亮相似元素
+     * Get currently selected elements
      */
-    highlightBySelector(selector) {
-        const matching = this.elements.filter(el => {
-            // 简单匹配 - 可以扩展
-            return el.selector === selector ||
-                   el.selector.includes(selector) ||
-                   selector.includes(el.tag);
-        });
-
-        this.selectedElements = matching;
-        this._renderOverlay();
-
-        return matching;
+    getSelectedElements() {
+        return [...this.selectedElements];
     }
 
     /**
-     * 销毁
+     * Request elements list from backend via WebSocket
+     */
+    requestElements() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'getElements' }));
+        }
+    }
+
+    /**
+     * Request smart analysis via WebSocket
+     */
+    requestAnalyze() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'analyze' }));
+        }
+    }
+
+    /**
+     * Find similar elements by selector via WebSocket
+     */
+    findSimilar(selector) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'findSimilar', selector }));
+        }
+    }
+
+    /**
+     * Destroy canvas and clean up
      */
     destroy() {
         this.closeSession();
@@ -593,5 +508,15 @@ class BrowserCanvas {
     }
 }
 
-// 导出到全局
+// Utility
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// Export
 window.BrowserCanvas = BrowserCanvas;
