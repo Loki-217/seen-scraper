@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session, selectinload
 
 from .. import schemas, crud, models
 from ..db import get_session
-from ..runner import run_preview, RunnerError
 
 router = APIRouter()
 
@@ -77,34 +76,3 @@ def get_job(job_id: int, s: Session = Depends(get_session)):
 def delete_job(job_id: int, s: Session = Depends(get_session)):
     crud.delete_job(s, job_id)
     return {"ok": True}
-
-
-# ---------- Preview ----------
-@router.post("/{job_id}/preview", response_model=schemas.JobPreviewResp)
-def preview_job(
-    job_id: int,
-    req: schemas.JobPreviewReq,
-    s: Session = Depends(get_session),
-):
-    job = _load_job_with_rels(s, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job not found")
-
-    url = req.url or job.start_url
-    out: dict[str, list[str]] = {}
-
-    for sel in job.selectors:
-        try:
-            data = run_preview(
-                url=url,
-                selector=sel.css,
-                attr=sel.attr,
-                wait_selector=req.wait_selector,   # 现在 schema 里有
-                timeout_ms=req.timeout_ms,         # ✅ 关键：schema 已补
-                limit=min(req.limit, sel.limit or req.limit),
-            )
-            out[sel.name] = data["samples"]
-        except RunnerError as e:
-            out[sel.name] = [f"ERROR: {e}"]
-
-    return schemas.JobPreviewResp(url=url, samples=out)

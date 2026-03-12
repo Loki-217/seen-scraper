@@ -16,18 +16,13 @@ class Settings(BaseSettings):
     uvicorn_host: str = "127.0.0.1"
     uvicorn_port: int = 8000
     
-    model_config = SettingsConfigDict(
-        env_prefix="SEENFETCH_",  
-        env_file=".env",
-        case_sensitive=False,
-    )
     # 🔥 火山引擎 DeepSeek 配置
     deepseek_api_key: str = Field(
-        default="9cda15b4-30a6-42c3-9a49-c8edff7e86d9",
+        default="",
         description="api key"
     )
     deepseek_endpoint_id: str = Field(
-        default="ep-20251010011104-trprx",
+        default="",
         description="接入点 ID"
     )
     deepseek_api_base: str = Field(
@@ -38,9 +33,9 @@ class Settings(BaseSettings):
         default=True,
         description="是否启用 AI 功能（如果 API Key 或 Endpoint ID 为空，自动禁用）"
     )
-    
+
     model_config = SettingsConfigDict(
-        env_prefix="SEENFETCH_",  
+        env_prefix="SEENFETCH_",
         env_file=".env",
         case_sensitive=False,
     )

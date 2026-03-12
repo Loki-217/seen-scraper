@@ -6,60 +6,41 @@ if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from contextlib import asynccontextmanager
-from typing import Optional, List
 import traceback
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
 
 from .settings import settings
 from .logging_conf import setup_logging
 
-# 任务路由 & DB
+# DB
 from .db import init_db
+
+# V1 routers (jobs/runs)
 from .routers.jobs import router as jobs_router
-
-# 远程页预览（Playwright 封装）
-from .runner import run_preview, RunnerError
-
-# 本地 HTML 解析预览
-from bs4 import BeautifulSoup
-import soupsieve as sv
 from .routers.runs import router as runs_router, router_jobs as runs_jobs_router
 
-from .proxy import router as proxy_router
-
-from .smart_extractor_subprocess import SmartExtractor
-
-from typing import Dict
-
+# V2 routers
 from .routers.ai import router as ai_router
-
-# V2: Session Manager 和 Browser 路由
 from .routers.browser import router as browser_router
 from .routers.smart import router as smart_router
-from .session_manager import session_manager
-
-# V2: 调度器
-from .scheduler import scheduler
-
-# V2: Robot 和 Schedule 路由
 from .routers.robots import router as robots_router
 from .routers.schedules import router as schedules_router, runs_router as scheduled_runs_router
 
-from pydantic import BaseModel, Field
-from typing import Optional
-# ---------- 应用生命周期 ----------
+# V2: Session Manager and Scheduler
+from .session_manager import session_manager
+from .scheduler import scheduler
+
+
+# ---------- App lifespan ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup
-    init_db()   # 确保表已创建
-    # V2: 启动 Session Manager
+    init_db()
     await session_manager.start()
     print("[SeenFetch] Session Manager 已启动")
-    # V2: 启动调度器
     await scheduler.start()
     print("[SeenFetch] Scheduler 已启动")
     yield
@@ -70,7 +51,7 @@ async def lifespan(app: FastAPI):
     print("[SeenFetch] Session Manager 已停止")
 
 
-# ---------- 创建应用 ----------
+# ---------- Create app ----------
 setup_logging()
 app = FastAPI(
     title="SeenFetch API",
@@ -81,7 +62,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 🔥 添加全局异常处理 - 必须在app创建之后
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     error_detail = {
@@ -108,20 +88,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 业务路由
+# Routers
 app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
-app.include_router(runs_jobs_router)                        # /jobs/{id}/run
+app.include_router(runs_jobs_router)
 app.include_router(runs_router)
-app.include_router(proxy_router)  # 添加代理路由
-app.include_router(ai_router)  # 添加 AI 路由
-app.include_router(browser_router)  # V2: Session/Browser API
-app.include_router(smart_router)    # V2: 智能识别 API
-app.include_router(robots_router)   # V2: Robot API
-app.include_router(schedules_router)  # V2: Schedule API
-app.include_router(scheduled_runs_router)  # V2: Scheduled Run API
+app.include_router(ai_router)
+app.include_router(browser_router)
+app.include_router(smart_router)
+app.include_router(robots_router)
+app.include_router(schedules_router)
+app.include_router(scheduled_runs_router)
 
 
-# ---------- 品牌data端点 ----------
+# ---------- Root ----------
 @app.get("/")
 def root():
     return {
@@ -132,120 +111,10 @@ def root():
         "api_docs": "/api/docs"
     }
 
-# ---------- 健康检查 ----------
+# ---------- Health check ----------
 @app.get("/health")
 def health():
     return {"ok": True, "version": settings.api_version}
-
-# ---------- Playwright 远程页面预览 ----------
-class PlayPreviewReq(BaseModel):
-    url: str = Field(..., description="页面 URL")
-    selector: str = Field(..., description="CSS 选择器")
-    attr: str = Field(default="text", description="text 或属性名：href/src/…")
-    wait_selector: Optional[str] = Field(default=None, description="进入页面后等待的选择器（可选）")
-    timeout_ms: int = Field(default=10000, ge=1000, le=60000)
-    limit: int = Field(default=20, ge=1, le=100)
-
-class PlayPreviewResp(BaseModel):
-    url: str
-    selector: str
-    attr: str
-    count: int
-    samples: List[str]
-
-@app.post("/play/preview", response_model=PlayPreviewResp)
-def play_preview(req: PlayPreviewReq):
-    try:
-        data = run_preview(
-            url=req.url,
-            selector=req.selector,
-            attr=req.attr,
-            wait_selector=req.wait_selector,
-            timeout_ms=req.timeout_ms,
-            limit=req.limit,
-        )
-        return PlayPreviewResp(
-            url=req.url,
-            selector=req.selector,
-            attr=data["attr"],
-            count=int(data["count"]),
-            samples=data["samples"],
-        )
-    except RunnerError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-# ---------- 本地 HTML + 选择器预览 ----------
-class TemplatePreviewReq(BaseModel):
-    html: str = Field(..., description="原始 HTML 文本（片段/示例均可）")
-    selector: str = Field(..., description="CSS 选择器，如 'article h1'")
-    attr: str = Field(default="text", description="text 或属性名：href/src/…")
-    limit: int = Field(default=50, ge=1, le=200)
-    strip: bool = Field(default=True, description="提取文本是否 strip()")
-
-class TemplatePreviewResp(BaseModel):
-    selector: str
-    attr: str
-    count: int
-    samples: List[str]
-
-@app.post("/templates/preview", response_model=TemplatePreviewResp)
-def templates_preview(req: TemplatePreviewReq):
-    # 先校验选择器语法，报错更友好
-    try:
-        sv.compile(req.selector)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"无效的 CSS 选择器: {e}")
-
-    try:
-        soup = BeautifulSoup(req.html, "lxml")
-        nodes = soup.select(req.selector)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"解析/匹配失败: {e}")
-
-    samples: List[str] = []
-    attr = (req.attr or "text").lower()
-    for el in nodes[: req.limit]:
-        if attr == "text":
-            samples.append(el.get_text(strip=req.strip))
-        else:
-            samples.append((el.get(attr) or "").strip())
-
-    return TemplatePreviewResp(
-        selector=req.selector,
-        attr=attr,
-        count=len(nodes),
-        samples=samples,
-    )
-
-class SmartAnalyzeRequest(BaseModel):
-    """智能分析请求"""
-    url: str = Field(..., description="目标网址")
-    auto_scroll: bool = Field(default=True, description="是否自动滚动加载")
-    use_stealth: bool = Field(default=False, description="是否启用隐身模式")
-    use_markdown: bool = Field(default=False, description="是否使用 Markdown 分析")
-    wait_for: Optional[str] = Field(default=None, description="等待的 CSS 选择器")
-
-@app.post("/api/smart/analyze")
-async def smart_analyze(req: SmartAnalyzeRequest):  # 🔥 注意：参数是 req，不是 url
-    """智能分析页面结构（增强版）"""
-    try:
-        extractor = SmartExtractor()
-        result = await extractor.analyze_page(
-            url=req.url,  # 🔥 从请求体中获取
-            config={
-                "auto_scroll": req.auto_scroll,
-                "use_stealth": req.use_stealth,
-                "use_markdown": req.use_markdown,
-                "wait_for": req.wait_for
-            }
-        )
-        return result
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {"success": False, "error": str(e), "suggestions": []}
-
 
 
 if __name__ == "__main__":
