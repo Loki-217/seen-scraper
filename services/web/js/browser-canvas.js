@@ -29,6 +29,7 @@ class BrowserCanvas {
         this._lastFrameTime = 0;
         this._fps = 0;
         this._fpsInterval = null;
+        this._refreshTimer = null;  // Debounce timer for element refresh
 
         this._createDOM();
         this._bindEvents();
@@ -44,7 +45,7 @@ class BrowserCanvas {
             position: relative;
             width: 100%;
             height: 100%;
-            overflow: hidden;
+            overflow: auto;
             background: #1a1a1a;
         `;
 
@@ -54,8 +55,7 @@ class BrowserCanvas {
         this.frameImg.style.cssText = `
             display: block;
             width: 100%;
-            height: 100%;
-            object-fit: contain;
+            height: auto;
             user-select: none;
             -webkit-user-drag: none;
         `;
@@ -67,8 +67,6 @@ class BrowserCanvas {
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
             pointer-events: none;
         `;
         this.ctx = this.overlay.getContext('2d');
@@ -80,8 +78,6 @@ class BrowserCanvas {
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
             cursor: crosshair;
         `;
 
@@ -163,10 +159,22 @@ class BrowserCanvas {
             }
         });
 
-        // Update overlay when frame loads (to sync canvas dimensions)
+        // Update overlay/interaction layer size when frame loads
         this.frameImg.addEventListener('load', () => {
+            this._syncLayerSize();
             this._renderOverlay();
         });
+    }
+
+    // ---------- Layer sizing ----------
+
+    _syncLayerSize() {
+        const w = this.frameImg.offsetWidth + 'px';
+        const h = this.frameImg.offsetHeight + 'px';
+        this.overlay.style.width = w;
+        this.overlay.style.height = h;
+        this.interactionLayer.style.width = w;
+        this.interactionLayer.style.height = h;
     }
 
     // ---------- Coordinate conversion ----------
@@ -234,6 +242,7 @@ class BrowserCanvas {
         const { x, y } = this._getCoords(e);
         this.ws.send(JSON.stringify({ type: 'mousePressed', x, y, button: 'left', clickCount: 1 }));
         this.ws.send(JSON.stringify({ type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }));
+        this._scheduleElementRefresh(1000);  // Longer delay for navigation
     }
 
     _handleWheel(e) {
@@ -246,6 +255,12 @@ class BrowserCanvas {
             deltaX: e.deltaX,
             deltaY: e.deltaY
         }));
+        this._scheduleElementRefresh();
+    }
+
+    _scheduleElementRefresh(delay = 500) {
+        if (this._refreshTimer) clearTimeout(this._refreshTimer);
+        this._refreshTimer = setTimeout(() => this.requestElements(), delay);
     }
 
     // ---------- Element lookup ----------

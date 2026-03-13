@@ -3,170 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SeenFetch - See it, Fetch it | Visual Web Scraper</title>
-    <meta name="description" content="SeenFetch: The easiest way to extract data from websites. No coding required.">
-    
-    <!-- Favicon -->
+    <title>SeenFetch Studio - See it, Fetch it</title>
+    <meta name="description" content="SeenFetch: Visual web data extraction tool. No coding required.">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
-    
-    <!-- 样式 -->
-    <link rel="stylesheet" href="css/index-v2.css">
+    <link rel="stylesheet" href="css/studio.css">
 </head>
 <body>
-    <!-- Header -->
-    <header class="header">
-        <div class="brand-logo">
-            <div class="brand-icon">👁️</div>
-            <div class="brand-name">SeenFetch</div>
-            <div class="brand-tagline">See it, Fetch it</div>
-        </div>
-        
-        <div class="url-container">
-            <input type="url" 
-                   class="url-input" 
-                   id="urlInput"
-                   placeholder="粘贴网页地址，开始可视化数据提取">
-            
-            <div class="mode-selector">
-                <button class="mode-btn active" onclick="switchMode('manual')"> 手动选择</button>
-                <button class="mode-btn" onclick="switchMode('smart')"> 智能识别</button>
-            </div>
-            
-            <button class="btn btn-primary" onclick="loadPage()">
-                开始提取
-            </button>
-        </div>
-    </header>
-    
-    <!-- Main Wrapper -->
-    <div class="main-wrapper">
-        <!-- 左侧工具栏 -->
-        <aside class="left-sidebar">
-            <div class="sidebar-icon" title="功能预留">🏠</div>
-            <div class="sidebar-icon" title="功能预留">👤</div>
-            <div class="sidebar-icon" title="功能预留">⚙️</div>
-        </aside>
-        
-            <!-- 手动模式 -->
-        <div id="manualMode" class="mode-content">
-            <div class="preview-section">
-                <!-- 左侧：网页预览 -->
-                <div class="web-preview">
-                    <div class="preview-header">
-                        <h3> 网页预览</h3>
-                        <button class="btn btn-secondary" onclick="toggleConfigModal()">
-                            ⚙️ 配置字段
-                        </button>
-                    </div>
-                    <div class="preview-container">
-                        <!-- 加载提示 -->
-                        <div id="loadingOverlay" class="loading-overlay hidden">
-                            <div class="spinner"></div>
-                            <p>正在加载页面...</p>
-                        </div>
-                        
-                        <!-- iframe 预览 -->
-                        <iframe id="previewFrame" class="preview-iframe"></iframe>
-                    </div>
-                </div>
 
-                <!-- 右侧：数据预览 -->
-                <div class="data-preview">
-                    <div class="preview-header">
-                        <h3> 数据预览</h3>
-                        <button id="manualExportBtn" class="btn btn-success" onclick="exportData()" disabled>
-                             导出数据
-                        </button>
+<!-- Top Bar -->
+<header class="topbar">
+    <div class="brand">
+        <span class="brand-icon">👁️</span>
+        <span class="brand-name">SeenFetch</span>
+        <span class="brand-badge">Studio</span>
+    </div>
+
+    <div class="url-input-wrapper">
+        <span class="url-prefix">🔗</span>
+        <input type="url" class="url-input" id="urlInput"
+               placeholder="Enter URL to start extracting data..."
+               value="https://quotes.toscrape.com/">
+    </div>
+
+    <button class="btn btn-topbar" id="loadBtn" onclick="startSession()">Load</button>
+    <button class="btn btn-topbar btn-topbar-danger hidden" id="closeBtn" onclick="closeSession()">End</button>
+
+    <div class="session-status" id="sessionStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">Ready</span>
+    </div>
+</header>
+
+<!-- Workspace -->
+<main class="workspace">
+    <div class="workspace-main">
+        <!-- Browser Pane -->
+        <section class="browser-pane">
+            <!-- Browser Toolbar -->
+            <div class="browser-toolbar">
+                <span class="toolbar-url" id="currentUrl">No page loaded</span>
+                <div class="toolbar-actions">
+                    <button class="btn btn-sm btn-secondary" onclick="canvas && canvas.requestElements()" title="Refresh elements">🔄</button>
+                </div>
+            </div>
+
+            <!-- Browser Canvas Container -->
+            <div class="browser-container" id="browserContainer">
+                <!-- Empty state -->
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">👁️</div>
+                    <p>Enter a URL and click <strong>Load</strong> to start</p>
+                    <p class="text-muted">Real-time page preview with element detection</p>
+                </div>
+            </div>
+
+            <!-- Browser Status Bar -->
+            <div class="browser-statusbar">
+                <span>Elements: <strong id="elementCount">0</strong></span>
+                <span>Selected: <strong id="selectionCount">0</strong></span>
+                <span>FPS: <strong id="frameRate">0</strong></span>
+            </div>
+
+            <!-- Bottom Preview Dock -->
+            <div class="preview-dock collapsed" id="previewDock">
+                <div class="dock-header" onclick="togglePreviewDock()">
+                    <div class="dock-title">
+                        <span>📋</span>
+                        <span>Output Data Preview</span>
+                        <span id="previewItemCount" class="dock-count"></span>
                     </div>
-                    <div id="manualPreviewContent" class="preview-content">
-                        <div class="preview-empty">
-                            请先配置字段并确认，然后开始采集数据
+                    <button class="dock-toggle" id="dockToggleBtn">↑</button>
+                </div>
+                <div class="dock-body" id="dockBody">
+                    <div id="dockPreviewTable" class="dock-table-container">
+                        <div class="dock-empty">
+                            It looks like you have not selected anything for extraction yet.
+                            Once you do, you will see a preview of your selections here.
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-                        
-                <!-- 智能模式：分屏布局 -->
-        <div id="smartMode" class="smart-panel hidden" style="display: flex; height: 100%; padding: 0;">
-            <!-- 🔥 左侧：页面预览 (50%) -->
-            <div class="smart-preview-pane" style="flex: 1; position: relative; margin-right: 0.5rem;">
-                <div style="padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px 12px 0 0;">
-                    <h3 style="margin: 0; font-size: 1.1rem;"> 页面预览</h3>
-                </div>
-                
-                <div style="position: relative; height: calc(100% - 60px); background: white; border-radius: 0 0 12px 12px; overflow: hidden;">
-                    <div id="smartPreviewLoading" class="loading-overlay hidden">
-                        <div class="spinner"></div>
-                        <p style="margin-top: 1rem; color: #666;">正在加载页面...</p>
-                    </div>
-                    <iframe id="smartPreviewFrame" style="width: 100%; height: 100%; border: none;"></iframe>
-                </div>
+        </section>
+
+        <!-- Guide Pane (right side) -->
+        <aside class="config-pane">
+            <!-- Guide icon -->
+            <div class="guide-icon-area">
+                <div class="guide-icon-circle">👁️</div>
             </div>
-            
-            <!-- 🔥 右侧：智能分析结果 (50%) -->
-            <div class="smart-analysis-pane" style="flex: 1; display: flex; flex-direction: column; background: white; border-radius: 12px; overflow: hidden;">
-                <div style="padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                    <h3 style="margin: 0; font-size: 1.1rem;"> 智能分析结果</h3>
-                </div>
-                
-                <div style="position: relative; flex: 1; display: flex; flex-direction: column;">
-                    <div id="smartLoading" class="loading-overlay hidden">
-                        <div class="spinner"></div>
-                        <p style="margin-top: 1rem; color: #666;">AI正在分析页面结构...</p>
-                    </div>
-                    
-                    <div id="suggestionsList" style="flex: 1; overflow-y: auto; padding: 1rem;"></div>
-                    
-                    <div class="action-bar" style="padding: 1rem; border-top: 2px solid #e0e0e0; display: flex; gap: 0.5rem;">
-                        <button class="btn btn-primary" style="flex: 1" onclick="applySmartSelections()">
-                            应用选中的字段
-                        </button>
-                        <button class="btn" style="background: #e0e0e0; color: #333;" onclick="selectAllSuggestions()">
-                            全选
-                        </button>
-                    </div>
-                </div>
+
+            <!-- Guide content (state machine renders here) -->
+            <div class="guide-content" id="guideContent">
+                <!-- Rendered by JS -->
             </div>
-        </div>
-            
-            
-    
-    <!-- 绿色配置按钮 -->
-    <button class="config-toggle-btn" onclick="toggleConfigModal()" title="配置采集字段">
-        ⚙️
-    </button>
-    
-    <!-- 配置弹窗 -->
-    <div class="config-modal" id="configModal" onclick="closeModalOnBackdrop(event)">
-        <div class="config-content" onclick="event.stopPropagation()">
-            <div class="config-header">
-                <h2>📋 采集配置</h2>
-                <button class="close-btn" onclick="toggleConfigModal()">✕</button>
+
+            <!-- Fixed footer -->
+            <div class="guide-footer">
+                <button class="btn-discard" onclick="discardRobot()">⊘ Discard</button>
+                <button class="btn-finish" id="finishBtn" onclick="saveAsRobot()" disabled>Finish</button>
             </div>
-            
-            <div class="config-body">
-                <div id="fieldsList">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📝</div>
-                        <p>还没有配置任何字段</p>
-                        <small>选择模式并开始分析页面</small>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="config-footer">
-                <button class="btn btn-confirm" id="confirmBtn" onclick="confirmFields()" disabled>
-                    ✓ 确认配置
-                </button>
-                <button class="btn btn-secondary" onclick="clearFields()">
-                    清空
-                </button>
-            </div>
-        </div>
+        </aside>
     </div>
-    
-    <!-- JavaScript -->
-    <script src="js/index-v2.js"></script>
+</main>
+
+<!-- Toast Container -->
+<div id="toastContainer"></div>
+
+<!-- Scripts -->
+<script src="js/browser-canvas.js"></script>
+<script src="js/studio.js"></script>
+
 </body>
 </html>
