@@ -417,6 +417,330 @@ class BrowserSession:
                 pass
             self.screencast_active = False
 
+    # ---------- List Detection Script Injection ----------
+
+    _LIST_DETECTION_SCRIPT = '''
+    (() => {
+        if (window.__seenfetch_list_detection_active) return;
+        window.__seenfetch_list_detection_active = true;
+        window.__seenfetch_detected_list = null;
+
+        const STYLE_ID = '__seenfetch_list_style';
+        const HIGHLIGHT_ATTR = 'data-seenfetch-list-item';
+        const LABEL_CLASS = '__seenfetch_label';
+
+        // Inject highlight styles
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = `
+            [${HIGHLIGHT_ATTR}] {
+                outline: 2px dashed rgba(102, 126, 234, 0.7) !important;
+                outline-offset: -1px !important;
+            }
+            .__seenfetch_label {
+                position: absolute;
+                top: 0; left: 0;
+                background: rgba(102, 126, 234, 0.85);
+                color: #fff;
+                font-size: 10px;
+                padding: 1px 5px;
+                border-radius: 0 0 4px 0;
+                pointer-events: none;
+                z-index: 2147483647;
+                font-family: sans-serif;
+                line-height: 16px;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Structure similarity: tagName + first 2 classes
+        function structureKey(el) {
+            const tag = el.tagName;
+            const cls = (el.className || '').toString().split(' ')
+                .filter(c => c && !/\\d{3,}/.test(c))
+                .sort().slice(0, 2).join(',');
+            return tag + ':' + cls;
+        }
+
+        // Generate a CSS selector for an element
+        function genSelector(el) {
+            if (el.id) return '#' + CSS.escape(el.id);
+            if (el.className && typeof el.className === 'string') {
+                const cls = el.className.split(' ')
+                    .filter(c => c && !/\\d{3,}/.test(c) && !c.includes('hover') && !c.includes('active'))
+                    .slice(0, 2);
+                if (cls.length) {
+                    const sel = el.tagName.toLowerCase() + '.' + cls.map(c => CSS.escape(c)).join('.');
+                    if (document.querySelectorAll(sel).length >= 1) return sel;
+                }
+            }
+            const parent = el.parentElement;
+            if (parent) {
+                const siblings = Array.from(parent.children).filter(c => c.tagName === el.tagName);
+                if (siblings.length === 1) return el.tagName.toLowerCase();
+                return el.tagName.toLowerCase() + ':nth-of-type(' + (siblings.indexOf(el) + 1) + ')';
+            }
+            return el.tagName.toLowerCase();
+        }
+
+        // Generate a container-relative selector
+        function genContainerSelector(container) {
+            const parts = [];
+            let el = container;
+            while (el && el !== document.body && parts.length < 4) {
+                if (el.id) { parts.unshift('#' + CSS.escape(el.id)); break; }
+                const parent = el.parentElement;
+                if (!parent) break;
+                const siblings = Array.from(parent.children).filter(c => c.tagName === el.tagName);
+                let sel = el.tagName.toLowerCase();
+                if (el.className && typeof el.className === 'string') {
+                    const cls = el.className.split(' ')
+                        .filter(c => c && !/\\d{3,}/.test(c) && !c.includes('hover') && !c.includes('active'))
+                        .slice(0, 2);
+                    if (cls.length) sel += '.' + cls.map(c => CSS.escape(c)).join('.');
+                } else if (siblings.length > 1) {
+                    sel += ':nth-of-type(' + (siblings.indexOf(el) + 1) + ')';
+                }
+                parts.unshift(sel);
+                el = parent;
+            }
+            return parts.join(' > ');
+        }
+
+        function clearHighlights() {
+            document.querySelectorAll('[' + HIGHLIGHT_ATTR + ']').forEach(el => {
+                el.removeAttribute(HIGHLIGHT_ATTR);
+            });
+            document.querySelectorAll('.' + LABEL_CLASS).forEach(el => el.remove());
+        }
+
+        let lastTarget = null;
+        let throttleTimer = null;
+
+        function onMouseMove(e) {
+            if (throttleTimer) return;
+            throttleTimer = setTimeout(() => { throttleTimer = null; }, 200);
+
+            const target = e.target;
+            if (target === lastTarget) return;
+            lastTarget = target;
+
+            clearHighlights();
+            window.__seenfetch_detected_list = null;
+
+            // Get parent container
+            const parent = target.parentElement;
+            if (!parent || parent === document.body || parent === document.documentElement) return;
+
+            // Get structure key of target
+            const targetKey = structureKey(target);
+
+            // Find siblings with same structure
+            const children = Array.from(parent.children);
+            const similar = children.filter(c => structureKey(c) === targetKey);
+
+            if (similar.length < 2) return;
+
+            // Highlight similar items
+            similar.forEach((el, i) => {
+                el.setAttribute(HIGHLIGHT_ATTR, '');
+                // Add label
+                const rect = el.getBoundingClientRect();
+                const label = document.createElement('div');
+                label.className = LABEL_CLASS;
+                label.textContent = 'Item ' + (i + 1);
+                label.style.position = 'fixed';
+                label.style.top = rect.top + 'px';
+                label.style.left = rect.left + 'px';
+                document.body.appendChild(label);
+            });
+
+            // Build item selector
+            const itemSel = genSelector(similar[0]);
+            const containerSel = genContainerSelector(parent);
+            const fullItemSelector = containerSel + ' > ' + itemSel.split(':nth-of-type')[0];
+
+            // Detect field selectors from the first item
+            const detectedFields = [];
+            const firstItem = similar[0];
+            const titleSels = ['h1','h2','h3','h4','h5','h6','[class*="title"]','[class*="name"]'];
+            for (const sel of titleSels) {
+                const el = firstItem.querySelector(sel);
+                if (el && el.textContent.trim()) {
+                    detectedFields.push({ name: 'title', selector: sel, attr: 'text', type: 'text' });
+                    break;
+                }
+            }
+            const linkEl = firstItem.querySelector('a[href]');
+            if (linkEl && linkEl.href) {
+                detectedFields.push({ name: 'url', selector: 'a[href]', attr: 'href', type: 'link' });
+            }
+            const imgEl = firstItem.querySelector('img');
+            if (imgEl) {
+                detectedFields.push({ name: 'image', selector: 'img', attr: 'src', type: 'image' });
+            }
+            // Price detection
+            const priceEl = firstItem.querySelector('[class*="price"],[class*="cost"],[class*="amount"]');
+            if (priceEl && priceEl.textContent.trim()) {
+                const priceSel = priceEl.className ? '.' + priceEl.className.split(/\s+/).filter(c => /price|cost|amount/i.test(c))[0] : '[class*="price"]';
+                detectedFields.push({ name: 'price', selector: priceSel || '[class*="price"]', attr: 'text', type: 'text' });
+            }
+
+            // Extract sample data from first 3 items
+            const sampleItems = similar.slice(0, 3).map(el => {
+                const obj = {};
+                const title = el.querySelector('h1,h2,h3,h4,h5,h6,[class*="title"],[class*="name"]');
+                if (title) obj.title = (title.innerText || '').substring(0, 100);
+                const link = el.querySelector('a[href]');
+                if (link) obj.url = link.href;
+                const img = el.querySelector('img');
+                if (img) obj.image = img.src;
+                const text = (el.innerText || '').substring(0, 200);
+                if (text) obj.text = text;
+                return obj;
+            });
+
+            // === rawItemData: extract all valuable nodes from the first item ===
+            const rawItemData = { texts: [], links: [], images: [] };
+            const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'PATH', 'BR', 'HR']);
+
+            // Generate a CSS selector relative to the item root
+            function relativeSelector(el, root) {
+                if (el === root) return '';
+                const parts = [];
+                let cur = el;
+                while (cur && cur !== root) {
+                    let seg = cur.tagName.toLowerCase();
+                    if (cur.id && !/\\d{3,}/.test(cur.id)) {
+                        seg = '#' + CSS.escape(cur.id);
+                        parts.unshift(seg);
+                        break;
+                    }
+                    if (cur.className && typeof cur.className === 'string') {
+                        const cls = cur.className.split(' ')
+                            .filter(c => c && c.length < 30 && !/\\d{3,}/.test(c))
+                            .slice(0, 2);
+                        if (cls.length) seg += '.' + cls.map(c => CSS.escape(c)).join('.');
+                    }
+                    const parent = cur.parentElement;
+                    if (parent && parent !== root) {
+                        const sibs = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
+                        if (sibs.length > 1) seg += ':nth-of-type(' + (sibs.indexOf(cur) + 1) + ')';
+                    }
+                    parts.unshift(seg);
+                    cur = cur.parentElement;
+                }
+                return parts.join(' > ');
+            }
+
+            // Collect text nodes
+            let textIdx = 0;
+            const walker = document.createTreeWalker(firstItem, NodeFilter.SHOW_ELEMENT, {
+                acceptNode: (node) => SKIP_TAGS.has(node.tagName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+            });
+            let node = walker.currentNode;
+            while (node) {
+                // Text content: only leaf-ish elements with direct text
+                const directText = Array.from(node.childNodes)
+                    .filter(n => n.nodeType === 3)
+                    .map(n => n.textContent.trim())
+                    .filter(t => t)
+                    .join(' ');
+                if (directText && directText.length > 0) {
+                    rawItemData.texts.push({
+                        index: textIdx++,
+                        text: directText.substring(0, 100),
+                        selector: relativeSelector(node, firstItem),
+                        tag: node.tagName.toLowerCase()
+                    });
+                }
+                node = walker.nextNode();
+            }
+
+            // Collect links
+            firstItem.querySelectorAll('a[href]').forEach((a, i) => {
+                rawItemData.links.push({
+                    index: i,
+                    href: a.href || '',
+                    text: (a.textContent || '').trim().substring(0, 100),
+                    selector: relativeSelector(a, firstItem)
+                });
+            });
+
+            // Collect images
+            firstItem.querySelectorAll('img').forEach((img, i) => {
+                rawItemData.images.push({
+                    index: i,
+                    src: img.src || img.dataset.src || '',
+                    alt: (img.alt || '').substring(0, 100),
+                    selector: relativeSelector(img, firstItem)
+                });
+            });
+
+            console.log('[DEBUG] rawItemData:', JSON.stringify(rawItemData).substring(0, 500));
+
+            window.__seenfetch_detected_list = {
+                containerSelector: containerSel,
+                itemSelector: fullItemSelector,
+                itemCount: similar.length,
+                sampleItems: sampleItems,
+                detectedFields: detectedFields,
+                rawItemData: rawItemData
+            };
+        }
+
+        document.addEventListener('mousemove', onMouseMove, true);
+
+        // Cleanup function
+        window.__seenfetch_cleanup_list_detection = () => {
+            document.removeEventListener('mousemove', onMouseMove, true);
+            clearHighlights();
+            const s = document.getElementById(STYLE_ID);
+            if (s) s.remove();
+            window.__seenfetch_detected_list = null;
+            window.__seenfetch_list_detection_active = false;
+            delete window.__seenfetch_cleanup_list_detection;
+        };
+    })();
+    '''
+
+    async def inject_list_detection_script(self):
+        """Inject the list detection script into the remote page"""
+        try:
+            await self.page.evaluate(self._LIST_DETECTION_SCRIPT)
+            # Re-inject on future navigations within this page
+            self._list_detection_handler = lambda: asyncio.ensure_future(
+                self.page.evaluate(self._LIST_DETECTION_SCRIPT)
+            )
+            self.page.on("load", self._list_detection_handler)
+        except Exception as e:
+            print(f"[BrowserSession] Failed to inject list detection script: {e}")
+
+    async def remove_list_detection_script(self):
+        """Remove the list detection script and cleanup highlights"""
+        try:
+            # Remove load event handler
+            if hasattr(self, '_list_detection_handler') and self._list_detection_handler:
+                self.page.remove_listener("load", self._list_detection_handler)
+                self._list_detection_handler = None
+            await self.page.evaluate('''
+                () => {
+                    if (typeof window.__seenfetch_cleanup_list_detection === 'function') {
+                        window.__seenfetch_cleanup_list_detection();
+                    }
+                }
+            ''')
+        except Exception as e:
+            print(f"[BrowserSession] Failed to remove list detection script: {e}")
+
+    async def get_detected_list(self) -> Optional[dict]:
+        """Read the currently detected list from the remote page"""
+        try:
+            result = await self.page.evaluate('() => window.__seenfetch_detected_list')
+            return result
+        except Exception:
+            return None
+
     async def inject_input(self, event: dict):
         """Inject mouse/keyboard events via CDP"""
         if not self.cdp_session:

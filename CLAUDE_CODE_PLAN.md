@@ -738,207 +738,376 @@ let currentTab = 'detect';
 
 ---
 
-### Phase 3：元素选择增强 + AI 集成（2-3 天）
+### Phase 3：交互模式改造 + 操作录制（预计 2-3 天）
 
-#### 任务 3.1：点选元素自动查找相似项
+**目标**：将当前的"左键选元素/右键导航"改为 Browse.ai 风格的模式切换机制，并实现操作步骤录制。
 
-```
-Claude Code 指令：
-
-增强 BrowserCanvas 的 click 处理。
-
-当前：左键点击 → 选中单个元素
-改为：左键点击 → 查找相同 tag+class 的元素 → 全部高亮 → 提示数量
-
-实现：
-1. 在 click handler 中，选中元素后调用 this.findSimilar(element.selector)
-2. findSimilar 通过 WebSocket 发送 {type:"findSimilar", selector:"..."}
-3. 后端返回 {type:"similarElements", rects:[...], count:N}
-4. 前端在 overlay canvas 上用绿色虚线框标记所有相似项
-5. 在状态栏显示 "Found 25 similar items"
-6. 触发事件：container.dispatchEvent(new CustomEvent('similarFound', {detail: {selector, count, rects}}))
-
-在 studio.js 中监听 similarFound 事件，Toast 提示："Found 25 similar items with selector '.product-card'"
-```
-
-#### 任务 3.2：AI 字段命名增强
+#### 任务 3.1：交互模式状态机
 
 ```
 Claude Code 指令：
 
-在 studio.js 的 displayDetectResults 中：
-对每个 suggested_field 的 confidence < 0.85 的字段，异步调用 AI 命名：
+重构 browser-canvas.js 的鼠标事件处理逻辑，引入交互模式状态机。
 
-async function enhanceFieldName(field) {
-    try {
-        const res = await fetch(`${API_BASE}/api/ai/suggest-field-name`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                element: {
-                    text: field.sample_values?.[0] || '',
-                    tagName: '', className: field.selector, id: '',
-                    href: '', src: ''
-                }
-            })
-        });
-        const result = await res.json();
-        if (result.confidence > field.confidence) {
-            field.name = result.fieldName;
-            field.confidence = result.confidence;
-        }
-    } catch(e) { /* ignore, keep original name */ }
-}
+⚠️ 不要删除或修改现有的 WebSocket 通信逻辑、帧渲染逻辑、元素数据结构。只修改鼠标事件的处理分支。
 
-在字段卡片上，如果 AI 优化过名称，显示一个小的 "AI" badge。
-这里复用现有的 /api/ai/suggest-field-name API，无需修改后端。
+当前行为：左键 = 选中元素，右键 = 真实点击导航
+改为：根据 interactionMode 变量决定鼠标行为
+
+在 BrowserCanvas 中新增属性：
+- this.interactionMode = 'navigate'  // 'navigate' | 'capture_list' | 'capture_text'
+
+模式行为定义：
+
+【navigate 模式（默认）】
+- 所有鼠标点击通过 WebSocket 发送 CDP Input 事件给浏览器（即现在的"右键点击"逻辑）
+- 不显示元素高亮框
+- 不拦截链接跳转
+- 滚轮事件正常转发
+
+【capture_list 模式】
+- 鼠标点击被前端拦截，不发送给浏览器
+- mousemove 时在 overlay canvas 上高亮鼠标下的元素（复用现有的 hoveredElement 逻辑）
+- 点击 = 确认选择当前悬停的列表（后续任务 3.4 会增强为动态列表检测）
+- 链接跳转被禁用
+- 滚轮事件仍然转发给浏览器（允许滚动查看页面）
+
+【capture_text 模式】
+- 鼠标点击被前端拦截
+- mousemove 时高亮鼠标下的单个元素
+- 点击 = 将该元素添加到 selectedElements 数组
+- 链接跳转被禁用
+- 滚轮事件仍然转发
+
+新增公共方法：
+- setMode(mode)：切换模式，清除当前高亮状态
+- getMode()：返回当前模式
+
+新增事件派发：
+- 模式切换时派发 'modeChange' 事件
+- capture_list 模式下用户点击确认列表时派发 'listCaptured' 事件（detail 包含 selector 和 item count）
+- capture_text 模式下用户点击元素时派发 'textCaptured' 事件（detail 包含 element 信息）
+
+在 studio.js 中：
+- 引导面板的 "From a list" 按钮 onclick → canvas.setMode('capture_list') + setGuideState('smartDetect')
+- "Just text" 按钮 onclick → canvas.setMode('capture_text') + setGuideState('manualSelect')
+- 用户完成选取（Confirm/Save）后 → canvas.setMode('navigate')
+- Discard 按钮 → canvas.setMode('navigate') + 重置引导状态
+
+保留现有的 elements 数组和 get_elements WebSocket 请求逻辑不变——这些在 capture 模式下仍然需要用来做 hitTest（判断鼠标下是哪个元素）。
 ```
 
----
-
-### Phase 4：Robot 保存 + 执行 + 调度（2 天）
-
-#### 任务 4.1：Robot 保存流程
+#### 任务 3.2：Step 操作录制与展示
 
 ```
 Claude Code 指令：
 
-实现 saveAsRobot() 函数。
+在 studio.js 中实现操作步骤录制系统。
 
-点击 "Save as Robot" 按钮 → 弹出模态框：
-┌──────────────────────────────────────┐
-│ 💾 Save Robot            [✕]        │
-├──────────────────────────────────────┤
-│                                      │
-│ Robot Name:                          │
-│ [_________________________________] │
-│                                      │
-│ Description (optional):              │
-│ [_________________________________] │
-│                                      │
-│ Origin URL: https://example.com/...  │ ← 灰色只读
-│ Fields: 5 configured                 │ ← 灰色只读
-│ Pagination: Next Button              │ ← 灰色只读
-│                                      │
-├──────────────────────────────────────┤
-│              [Cancel]  [Save Robot]  │
-└──────────────────────────────────────┘
+⚠️ 不要修改现有的引导面板状态机逻辑（renderGuidePanel 等函数），只在其基础上追加录制功能。录制的步骤列表显示在右侧面板的引导内容下方（引导按钮和选项之下，Discard/Finish 之上），随着用户操作实时追加。
 
-模态框样式：
-- 遮罩：fixed 全屏，bg rgba(0,0,0,0.5)，z-index 1000
-- 卡片：bg white，max-width 480px，border-radius 12px，box-shadow var(--shadow-lg)
-- 标题栏：padding 16px 20px，border-bottom，font-size 16px font-weight 600
-- 表单区：padding 20px
-- 底部：padding 16px 20px，border-top，flex，justify-content flex-end，gap 8px
+新增数据结构：
+let recordedSteps = [];  // 录制的步骤数组
 
-保存时调用 POST /robots，body：
+每个步骤对象的结构：
 {
-    name, description,
-    origin_url: currentSession.pageInfo.url,
-    item_selector: smartResult?.lists?.[0]?.item_selector || "",
-    fields: configuredFields.map(f => ({name: f.name, selector: f.selector, attr: f.attr})),
-    pagination: paginationConfig ? { type: paginationConfig.type, selector: paginationConfig.next_button_selector, max_pages: paginationConfig.max_pages, wait_ms: 1000 } : null,
-    actions: []
+    type: 'navigation' | 'interaction' | 'captured_list' | 'captured_text' | 'captured_screenshot',
+    timestamp: ISO string,
+    details: {
+        // navigation: { url: string }
+        // interaction: { action: 'click' | 'scroll' | 'input', selector?: string, x?: number, y?: number }
+        // captured_list: { name: string, selector: string, itemCount: number, fields: [...] }
+        // captured_text: { name: string, selector: string, sampleValue: string }
+    }
 }
 
-成功后：
-- Toast "Robot saved!"
-- 弹出确认："Run now?" [Run Now] [Set Schedule] [Later]
-- Run Now → 调用 POST /robots/{id}/run，显示执行进度
-- Set Schedule → 调用 schedule-manager.js 的 showScheduleDialogDirect(robot)
+录制触发点：
+1. WebSocket 收到 pageInfo 消息（URL 变化）→ 追加 navigation 步骤
+2. navigate 模式下用户点击被转发给浏览器 → 追加 interaction 步骤（记录 click 坐标和目标元素 selector）
+3. capture_list 模式下用户完成列表选取 → 追加 captured_list 步骤
+4. capture_text 模式下用户确认文本选取 → 追加 captured_text 步骤
+
+步骤列表的 UI 渲染：
+- 调用 renderRecordedSteps() 函数将 recordedSteps 渲染为 HTML
+- 每个步骤显示为一个小卡片，包含步骤类型图标、简短描述
+- 步骤类型图标：navigation = ▶，interaction = ↗，captured_list = ≡，captured_text = T
+- 步骤描述从 details 中动态生成（如 "Navigating to https://..." 截断显示）
+- 新步骤追加时滚动到底部
+
+保存 Robot 时的数据转换：
+- 将 recordedSteps 转换为后端 Robot 模型的 actions 格式
+- navigation 和 interaction 步骤 → 转为 actions 数组中的 {type: "click"/"scroll"/"navigate", ...}
+- captured_list 和 captured_text 步骤 → 转为 fields 配置
+- 在 saveAsRobot() 函数中组装这些数据
+
+为未来 Monitor 功能预留接口：
+- recordedSteps 数组设计为可序列化的（纯 JSON，无 DOM 引用）
+- 新增函数 getRecordingData() 返回完整的录制数据（steps + fields + pagination config）
+- 新增函数 loadRecordingData(data) 从已有数据恢复录制状态（未来 Monitor 重新训练时用）
+- 新增事件 'recordingComplete' 在用户点击 Finish 时派发，detail 包含完整的录制数据
 ```
 
-#### 任务 4.2：执行进度和结果下载
+#### 任务 3.3：翻页/行数配置仅在 List 模式下显示
 
 ```
 Claude Code 指令：
 
-"Run Now" 点击后显示执行进度弹窗：
-┌──────────────────────────────────────┐
-│        🔄 Running Robot...           │
-│                                      │
-│  Status: Extracting page 3/10        │
-│  Items: 75                           │
-│  Duration: 12.3s                     │
-│                                      │
-│  ████████████░░░░░░ 30%             │
-│                                      │
-└──────────────────────────────────────┘
+修改 studio.js 中翻页配置区域的显示逻辑。
 
-实现：
-1. 调用 POST /robots/{id}/run 获取初始响应
-2. 由于 robot_executor 是异步的，用 polling 检查 robot 的 last_run_at 变化
-   或者更简单的方案：同步等待 API 返回（当前 run_robot 端点是 await executor.execute()）
-3. 成功后变为：
+⚠️ 不要修改翻页检测和翻页执行的后端逻辑（pagination_detector.py、pagination_executor.py），只修改前端的显示条件。
 
-┌──────────────────────────────────────┐
-│        ✅ Complete!                  │
-│                                      │
-│  Pages: 10  Items: 250  Time: 45.2s  │
-│                                      │
-│  [📥 Download CSV] [📥 Download JSON]│
-│                                      │
-│  [Close]                             │
-└──────────────────────────────────────┘
+当前行为：所有模式都显示 Step 3: Pagination 配置区域
+改为：
 
-CSV 下载：
-- 如果 result_file 存在，直接 window.open /robots/{id}/run 返回的 result_file 路径
-- 备选方案：在前端用 result.items 生成 CSV Blob 下载
+1. 仅当 interactionMode === 'capture_list' 且用户已选中一个列表（captured list 的 itemCount >= 2）时，
+   才显示翻页相关配置
 
-JSON 下载：
-- 前端生成：new Blob([JSON.stringify(items, null, 2)], {type: 'application/json'})
-- 创建临时 <a> 标签触发下载
+2. 翻页配置区域包含两部分（在列表选取确认后显示）：
+   - 行数选择：让用户选择最大抓取行数（提供 10 / 100 / Custom 三个选项，Custom 允许输入自定义数字）
+   - 翻页设置：一个 "Select Pagination Setting" 按钮，点击后调用现有的翻页检测 API，
+     展示检测结果并让用户确认
+
+3. 在 capture_text 模式下，完全不显示翻页配置
+
+4. 行数选择和翻页配置的值保存到 paginationConfig 对象中，供保存 Robot 时使用
+
+在 renderConfiguringGuide() 或对应的引导面板渲染函数中实现此条件判断。
+```
+
+#### 任务 3.4：鼠标跟随动态列表检测（CDP 注入方案）
+
+```
+Claude Code 指令：
+
+实现 Browse.ai 风格的动态列表检测：在 capture_list 模式下，鼠标悬停时实时识别当前层级的重复结构。
+
+⚠️ 这是技术难度最高的任务。核心原则：检测和高亮逻辑必须在远程浏览器端运行（通过 CDP 注入 JS），不能每次 mousemove 都通过 WebSocket 往返。只有用户"点击确认选择"时才通过 WebSocket 回传结果。
+
+实现方案分两层：
+
+【浏览器端注入脚本】
+通过 CDP Runtime.evaluate 向远程页面注入一段 JS 脚本（在 session_manager.py 中实现）。
+这段脚本的功能：
+- 监听 mousemove 事件（自带 200ms 节流 throttle）
+- 获取鼠标下的 DOM 元素 E
+- 获取 E 的父元素 P
+- 遍历 P 的所有直接子元素，计算与 E 的结构相似度（比较 tagName + className 组合）
+- 如果相似子元素 >= 2 个，认为这是一个列表
+- 用 CSS outline（虚线框）标记所有相似的列表项（不使用 box-shadow 或 border，避免影响布局）
+- 在每个列表项左上角叠加一个小的 "List Item N" 标签（用 ::before 伪元素或绝对定位 div）
+- 鼠标移走时清除上一次的高亮
+- 将当前检测到的列表信息（container selector、item selector、item count）暂存在 window.__seenfetch_detected_list 变量中
+
+注入脚本的管理：
+- 在 session_manager.py 的 BrowserSession 中新增方法 inject_list_detection_script()
+- 进入 capture_list 模式时调用此方法注入脚本
+- 退出 capture_list 模式时调用 remove_list_detection_script() 清除注入的脚本和样式
+- 页面导航后需要重新注入（监听 page 的 'load' 事件）
+
+【用户确认选择时的回传】
+用户在 capture_list 模式下点击页面：
+1. 前端通过 WebSocket 发送 {type: "confirmListSelection"} 给后端
+2. 后端通过 CDP Runtime.evaluate 读取 window.__seenfetch_detected_list 的值
+3. 返回给前端：{type: "listCaptured", selector: "...", itemCount: N, sampleItems: [...]}
+4. 前端接收后追加到 recordedSteps，更新引导面板显示
+
+在 routers/browser.py 的 WebSocket handler 中新增 "confirmListSelection" 消息类型的处理。
+
+现有的 list_detector.py 保留不动——它仍然用于 "Smart detect" 模式（全局一次性扫描）。
+新的动态检测是额外的功能，用于 "From a list" 模式。
+
+注入脚本中的列表结构相似度算法可以参考 list_detector.py 中的 getStructureHash 逻辑，
+简化为：两个元素的 tagName 相同且 className 的前两个 class 相同即认为结构相似。
 ```
 
 ---
 
-### Phase 5：打磨和测试（2 天）
+### Phase 4：Robot 保存 + 执行 + 导出完善（预计 1-2 天）
 
-#### 任务 5.1：错误处理
+**目标**：完善 Robot 保存流程，修复执行和导出功能，确保 Studio → 保存 → 执行 → 查看结果 的完整链路可用。
+
+#### 任务 4.1：完善 Robot 保存流程
 
 ```
 Claude Code 指令：
 
-为以下场景添加错误处理：
+检查并修复 studio.js 中 saveAsRobot() 函数的完整流程。
 
-1. URL 加载失败：
-   - WebSocket 断开 → 3 秒后自动重连，最多 3 次
-   - 重连失败 → Toast "Connection lost. Please reload the page."
+⚠️ 不要修改后端 API（routers/robots.py 的 POST /robots 和 POST /robots/{id}/run）。只修复前端逻辑。
 
-2. Session 过期（30 分钟）：
-   - 检测到 4xx 响应 → Toast "Session expired" + 自动清理 UI
+保存时需要收集的数据：
+- name 和 description：从保存对话框的输入框获取
+- origin_url：从当前 session 的 pageInfo.url 获取
+- actions：从 recordedSteps 中提取 navigation 和 interaction 类型的步骤，
+  转换为后端 Action 模型格式（参考 models_v2/schedule.py 中的 Action 类）
+- item_selector：从 captured_list 步骤中获取，或从 smartResult 中获取
+- fields：从 configuredFields 数组转换，每个字段包含 name、selector、attr
+- pagination：从 paginationConfig 转换，包含 type、selector、max_pages、wait_ms
 
-3. 智能分析无结果：
-   - 显示 "No data lists detected. Try selecting elements manually." + 自动切到 Fields tab
+调用 POST /robots 后的三个按钮行为（确认现有逻辑正确）：
+- Run Now → window.location.href = 'robot.html?id=' + robot.id + '&autorun=true'
+- Set Schedule → 调用现有的 showScheduleDialogDirect(robot)
+- Later → window.location.href = 'index.html'
+
+检查保存对话框中 robot.id 是否正确传递到三个按钮的 onclick 中。
+如果发现 robot.id 为 undefined，检查 POST /robots 的响应解析逻辑。
+```
+
+#### 任务 4.2：Robot 详情页执行和导出修复
+
+```
+Claude Code 指令：
+
+检查 robot.html 和 robot.js 的执行与导出功能。
+
+⚠️ 不要修改 robot.html 的页面布局和样式，只修复 JS 逻辑。
+
+需要确认和修复的点：
+
+1. autorun 流程：
+   - URL 参数包含 autorun=true 时，页面加载后自动调用 POST /robots/{id}/run
+   - 显示 loading 遮罩，等待 API 返回（这个 API 是同步等待执行完成的）
+   - 执行成功后，从响应中获取 result.items 数组
+   - 用 items 渲染数据表格（表头从 items[0] 的 keys 生成）
+   - 将 items 存入 JS 变量供 Download 使用
+
+2. 手动 Run Task 按钮：
+   - 点击后显示 loading 遮罩
+   - 调用 POST /robots/{id}/run
+   - 逻辑同上
+
+3. Download 功能：
+   - CSV 下载：在前端将 items 数组转为 CSV 格式
+     - 使用 BOM (\uFEFF) 开头确保中文在 Excel 中正确显示
+     - 字段值中的逗号和引号需要正确转义
+     - 创建 Blob 对象，用临时 <a> 标签触发下载
+   - JSON 下载：JSON.stringify(items, null, 2) → Blob → 下载
+
+4. 错误处理：
+   - 如果 POST /robots/{id}/run 返回 success: false，显示错误信息和重试按钮
+   - 如果网络请求失败，显示友好提示
+```
+
+---
+
+### Phase 5：打磨、测试与 Monitor 接口预留（预计 1-2 天）
+
+**目标**：完善错误处理，预留 Monitor 扩展接口，验证完整流程。
+
+#### 任务 5.1：错误处理完善
+
+```
+Claude Code 指令：
+
+为以下场景添加友好的错误处理。
+
+⚠️ 使用 Toast 通知显示错误信息，不要用 alert()。不要修改后端 API 的错误返回格式。
+
+1. WebSocket 断连自动重连：
+   - 在 browser-canvas.js 中，WebSocket onclose 事件触发后，3 秒后自动尝试重连
+   - 最多重连 3 次
+   - 重连期间在状态栏显示 "Reconnecting..."
+   - 全部失败后显示 Toast "Connection lost. Please reload the page."
+
+2. Session 过期处理：
+   - 后端返回 410 Gone 时（session 已过期），显示 Toast "Session expired"
+   - 自动清理前端状态并显示空状态页面
+
+3. 智能分析失败降级：
+   - Smart detect 失败时，显示 Toast 提示并建议用户使用 "From a list" 手动选取
+   - 不阻塞其他功能
 
 4. Robot 执行失败：
-   - 显示错误详情 + [Retry] 按钮
+   - robot.html 中执行失败时，显示错误详情 + 重试按钮
+   - 不要隐藏 loading 后显示空白，确保用户知道发生了什么
 
-5. 导出失败：
-   - 降级到前端生成（如果后端文件不可用）
+5. 页面加载超时：
+   - Studio 中 session 创建超时（30 秒），显示提示建议检查 URL 或网络
 ```
 
-#### 任务 5.2：创建测试指南
+#### 任务 5.2：Monitor 接口预留
 
 ```
 Claude Code 指令：
 
-创建 TEST_GUIDE.md，包含端到端测试用例：
+在现有代码中预留 Monitor 功能的扩展接口。
 
-测试 1 - 基础流程：
-URL: https://quotes.toscrape.com/
-步骤：输入URL → Load → 等待实时预览出现 → Run Analysis → 添加字段 → Preview → Export CSV
+⚠️ 不需要实现 Monitor 的任何功能逻辑，只是确保数据结构和代码架构不会阻碍未来添加 Monitor。
 
-测试 2 - 翻页：
-URL: https://quotes.toscrape.com/
-步骤：Detect pagination → 应该检测到 Next Button → Test → 配置 max_pages=3 → 执行抓取
+1. Robot 模型扩展预留：
+   - 在 models.py 的 RobotDB 中，添加一个注释标记未来 Monitor 字段的位置：
+     # === Future: Monitor fields ===
+     # monitor_enabled: bool
+     # monitor_frequency: str (cron expression)
+     # monitor_diff_mode: str ('visual' | 'content' | 'data')
+     # last_monitor_at: datetime
+     # === End Future ===
+   - 不要真的添加这些列，只留注释占位
 
-测试 3 - Robot 流程：
-步骤：在测试 1 基础上 → Save Robot → Run Now → 下载结果 → 设置每天执行的定时任务
+2. 录制数据的可复用性：
+   - 确认 getRecordingData() 返回的数据结构包含足够信息，
+     使得未来 Monitor 可以：
+     a) 重新执行同样的导航路径
+     b) 在同样的页面上提取同样的数据
+     c) 与上次结果做 diff 对比
+   - 具体来说，确保 recordedSteps 中的每个 navigation 步骤都包含完整 URL，
+     每个 captured_list/captured_text 步骤都包含完整的 selector 信息
 
-测试 4 - 异常场景：
-- 输入无效 URL → 应显示错误提示
-- 输入 localhost → 应显示错误提示
+3. robot.html 页面预留：
+   - 在 Tab 栏中，Quick Setup 旁边添加一个灰色不可点击的 "Monitor" tab
+   - 样式：color: #d1d5db, cursor: default, 旁边加一个小的 "Coming soon" badge
+   - 点击无反应
+
+4. home.html 主页预留：
+   - Robot 卡片中，如果未来 robot 有 monitor_enabled 属性，可以显示一个小的监控状态图标
+   - 现在不需要实现，但在渲染 Robot 卡片的代码中留一个注释标记：
+     // Future: if (robot.monitor_enabled) { show monitor status icon }
+```
+
+#### 任务 5.3：端到端测试验证
+
+```
+Claude Code 指令：
+
+创建 services/web/TEST_GUIDE.md，包含以下端到端测试用例。
+
+⚠️ 测试用例中的 URL 和数据都是建议值，测试者可以用任何网站替代。
+
+测试 1 - 完整的 Smart Detect 流程：
+- 打开主页 → 点击 Build New Robot → 进入 Studio
+- 输入 URL → Load → 等待实时预览出现
+- 点击 Capture text → Smart detect
+- 验证右侧面板显示检测到的列表和字段
+- 添加字段 → 验证底栏数据预览可以展开并显示数据
+- 点击 Finish → 命名 Robot → Save
+- 选择 Run Now → 跳转到 Robot 详情页 → 验证数据表格显示
+- 下载 CSV 和 JSON → 验证文件内容正确
+
+测试 2 - From a list 手动选取流程：
+- 进入 Studio → 加载页面
+- 点击 Capture text → From a list
+- 验证鼠标悬停时页面上出现列表高亮框
+- 点击确认列表 → 验证翻页配置区域出现
+- 设置最大行数 → 选择翻页方式
+- Finish → Save → Later → 验证跳转到主页 → 验证 Robot 卡片出现
+
+测试 3 - Just text 手动选取流程：
+- 进入 Studio → 加载页面
+- 点击 Capture text → Just text
+- 在页面上点击多个元素 → 验证右侧面板显示已选字段列表
+- 验证翻页配置不显示
+- Finish → Save
+
+测试 4 - 导航模式操作录制：
+- 进入 Studio → 加载一个包含链接的页面
+- 在导航模式下点击一个链接 → 验证页面跳转
+- 验证右侧面板的步骤列表显示 Step 1: Navigation 和 Step 2: Page Interaction
+- 在新页面上进行数据选取 → 验证步骤列表追加新步骤
+
+测试 5 - 错误场景：
+- 输入无效 URL → 验证错误提示
+- 在 Robot 详情页点击 Run Task 后断网 → 验证错误提示和重试按钮
+- 等待 session 过期（30 分钟不操作）→ 验证过期提示
 ```
 
 ---

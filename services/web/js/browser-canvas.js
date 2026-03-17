@@ -4,9 +4,12 @@
  * Receives real-time JPEG frames via WebSocket from CDP Screencast.
  * User interactions are sent back through the same WebSocket.
  *
- * Left click  → select/deselect element (frontend only)
- * Right click → inject click into remote browser via CDP
- * Wheel       → inject scroll into remote browser via CDP
+ * Interaction modes (controlled via setMode):
+ *   navigate     - clicks forwarded to remote browser, no highlights
+ *   capture_list - clicks intercepted, element highlight on hover, list selection
+ *   capture_text - clicks intercepted, element highlight on hover, element selection
+ *
+ * Wheel events are always forwarded to the remote browser.
  */
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -23,6 +26,7 @@ class BrowserCanvas {
         this.elements = [];
         this.hoveredElement = null;
         this.selectedElements = [];
+        this.interactionMode = 'navigate';  // 'navigate' | 'capture_list' | 'capture_text'
         this.isLoading = false;
         this.scale = 1;
         this._frameCount = 0;
@@ -30,6 +34,11 @@ class BrowserCanvas {
         this._fps = 0;
         this._fpsInterval = null;
         this._refreshTimer = null;  // Debounce timer for element refresh
+        this._listMoveTimer = null; // Throttle timer for capture_list mousemove forwarding
+        this._reconnectAttempts = 0;
+        this._maxReconnectAttempts = 3;
+        this._reconnectTimer = null;
+        this._intentionalClose = false;  // true when closeSession() is called
 
         this._createDOM();
         this._bindEvents();
@@ -78,7 +87,7 @@ class BrowserCanvas {
             position: absolute;
             top: 0;
             left: 0;
-            cursor: crosshair;
+            cursor: default;
         `;
 
         // Tooltip
@@ -127,7 +136,7 @@ class BrowserCanvas {
     }
 
     _bindEvents() {
-        // Mouse move → find hovered element → update overlay + tooltip
+        // Mouse move → mode-dependent behavior
         this.interactionLayer.addEventListener('mousemove', (e) => this._handleMouseMove(e));
 
         // Mouse leave
@@ -137,16 +146,15 @@ class BrowserCanvas {
             this.tooltip.style.display = 'none';
         });
 
-        // Left click → select/deselect element (frontend only, not sent to browser)
+        // Left click → mode-dependent behavior
         this.interactionLayer.addEventListener('click', (e) => this._handleClick(e));
 
-        // Right click → inject real click into remote browser via CDP
+        // Right click → always suppress default context menu
         this.interactionLayer.addEventListener('contextmenu', (e) => {
             e.preventDefault();
-            this._handleRealClick(e);
         });
 
-        // Wheel → inject scroll into remote browser via CDP
+        // Wheel → always forward to remote browser via CDP
         this.interactionLayer.addEventListener('wheel', (e) => {
             e.preventDefault();
             this._handleWheel(e);
@@ -193,9 +201,35 @@ class BrowserCanvas {
     // ---------- Event handlers ----------
 
     _handleMouseMove(e) {
-        if (!this.elements.length) return;
+        // navigate mode: no element highlighting
+        if (this.interactionMode === 'navigate') {
+            if (this.hoveredElement) {
+                this.hoveredElement = null;
+                this._renderOverlay();
+                this.tooltip.style.display = 'none';
+            }
+            return;
+        }
 
         const { x, y } = this._getCoords(e);
+
+        // capture_list: forward mousemove to remote browser so injected script can detect lists
+        if (this.interactionMode === 'capture_list') {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                // Throttle: reuse _listMoveTimer to avoid flooding
+                if (!this._listMoveTimer) {
+                    this._listMoveTimer = setTimeout(() => { this._listMoveTimer = null; }, 150);
+                    this.ws.send(JSON.stringify({ type: 'mouseMoved', x, y, button: 'none', clickCount: 0 }));
+                }
+            }
+            // No local tooltip or overlay in capture_list — the remote page handles highlighting
+            this.tooltip.style.display = 'none';
+            return;
+        }
+
+        // capture_text: highlight element under cursor locally
+        if (!this.elements.length) return;
+
         const element = this._findElementAt(x, y);
 
         if (element !== this.hoveredElement) {
@@ -218,31 +252,52 @@ class BrowserCanvas {
     }
 
     _handleClick(e) {
+        // ---------- navigate mode: send real click to browser ----------
+        if (this.interactionMode === 'navigate') {
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+            const { x, y } = this._getCoords(e);
+            this.ws.send(JSON.stringify({ type: 'mousePressed', x, y, button: 'left', clickCount: 1 }));
+            this.ws.send(JSON.stringify({ type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }));
+            // Find element at click position for recording
+            const clickedEl = this._findElementAt(x, y);
+            this.container.dispatchEvent(new CustomEvent('navigateClick', {
+                detail: { x, y, selector: clickedEl?.selector || '', tag: clickedEl?.tag || '', text: clickedEl?.text || '' }
+            }));
+            this._scheduleElementRefresh(1000);
+            return;
+        }
+
+        // ---------- capture modes: intercept click ----------
         const { x, y } = this._getCoords(e);
         const element = this._findElementAt(x, y);
 
-        if (element) {
-            const index = this.selectedElements.findIndex(el => el.selector === element.selector);
-            if (index >= 0) {
-                this.selectedElements.splice(index, 1);
-            } else {
-                this.selectedElements.push(element);
+        if (this.interactionMode === 'capture_list') {
+            // Send confirmListSelection via WebSocket — backend reads detected list from page
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({ type: 'confirmListSelection' }));
             }
-            this._renderOverlay();
-
-            this.container.dispatchEvent(new CustomEvent('elementSelect', {
-                detail: { element, selected: this.selectedElements }
-            }));
+            return;
         }
-    }
 
-    _handleRealClick(e) {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        if (this.interactionMode === 'capture_text') {
+            // Click adds/removes element to selectedElements
+            if (element) {
+                const index = this.selectedElements.findIndex(el => el.selector === element.selector);
+                if (index >= 0) {
+                    this.selectedElements.splice(index, 1);
+                } else {
+                    this.selectedElements.push(element);
+                }
+                this._renderOverlay();
 
-        const { x, y } = this._getCoords(e);
-        this.ws.send(JSON.stringify({ type: 'mousePressed', x, y, button: 'left', clickCount: 1 }));
-        this.ws.send(JSON.stringify({ type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }));
-        this._scheduleElementRefresh(1000);  // Longer delay for navigation
+                this.container.dispatchEvent(new CustomEvent('textCaptured', {
+                    detail: { element, selected: this.selectedElements }
+                }));
+                this.container.dispatchEvent(new CustomEvent('elementSelect', {
+                    detail: { element, selected: this.selectedElements }
+                }));
+            }
+        }
     }
 
     _handleWheel(e) {
@@ -261,6 +316,16 @@ class BrowserCanvas {
     _scheduleElementRefresh(delay = 500) {
         if (this._refreshTimer) clearTimeout(this._refreshTimer);
         this._refreshTimer = setTimeout(() => this.requestElements(), delay);
+    }
+
+    // ---------- Sync selected elements with fresh data ----------
+
+    _syncSelectedElements() {
+        if (!this.selectedElements.length) return;
+        const bySelector = new Map(this.elements.map(el => [el.selector, el]));
+        this.selectedElements = this.selectedElements
+            .map(sel => bySelector.get(sel.selector) || null)
+            .filter(Boolean);
     }
 
     // ---------- Element lookup ----------
@@ -290,7 +355,11 @@ class BrowserCanvas {
 
         this.ctx.clearRect(0, 0, width, height);
 
-        // All elements - light blue outline
+        // In navigate mode or capture_list mode, don't draw local highlights
+        // (capture_list uses remote-side highlighting via injected script)
+        if (this.interactionMode === 'navigate' || this.interactionMode === 'capture_list') return;
+
+        // All elements - light blue outline (capture_text mode only)
         this.elements.forEach(el => {
             const r = el.rect;
             this.ctx.strokeStyle = 'rgba(102, 126, 234, 0.2)';
@@ -340,6 +409,7 @@ class BrowserCanvas {
 
         this.ws.onopen = () => {
             console.log('[BrowserCanvas] WebSocket connected');
+            this._reconnectAttempts = 0;
             // Request initial elements
             this.requestElements();
         };
@@ -352,6 +422,7 @@ class BrowserCanvas {
                 this._frameCount++;
             } else if (msg.type === 'elements') {
                 this.elements = msg.elements || [];
+                this._syncSelectedElements();
                 this._renderOverlay();
                 this.container.dispatchEvent(new CustomEvent('elementsUpdated', {
                     detail: { elements: this.elements, count: this.elements.length }
@@ -360,15 +431,44 @@ class BrowserCanvas {
                 this.container.dispatchEvent(new CustomEvent('analyzeResult', {
                     detail: { lists: msg.lists, pagination: msg.pagination }
                 }));
+            } else if (msg.type === 'listCaptured') {
+                this.container.dispatchEvent(new CustomEvent('listCaptured', {
+                    detail: {
+                        containerSelector: msg.containerSelector || '',
+                        itemSelector: msg.itemSelector || '',
+                        itemCount: msg.itemCount || 0,
+                        sampleItems: msg.sampleItems || [],
+                        detectedFields: msg.detectedFields || [],
+                        rawItemData: msg.rawItemData || null,
+                        error: msg.error || null
+                    }
+                }));
+            } else if (msg.type === 'pageInfo') {
+                this.container.dispatchEvent(new CustomEvent('pageInfo', {
+                    detail: { url: msg.url, title: msg.title }
+                }));
             } else if (msg.type === 'similarElements') {
                 this.container.dispatchEvent(new CustomEvent('similarFound', {
                     detail: { selector: msg.selector, rects: msg.rects, count: msg.count }
                 }));
+            } else if (msg.type === 'analyzeError') {
+                this.container.dispatchEvent(new CustomEvent('analyzeError', {
+                    detail: { error: msg.error || 'Analysis failed' }
+                }));
+            } else if (msg.type === 'error') {
+                if (msg.status === 410 || msg.code === 'session_expired') {
+                    this.container.dispatchEvent(new CustomEvent('sessionExpired', { detail: {} }));
+                    this._intentionalClose = true;
+                    this.ws.close();
+                }
             }
         };
 
         this.ws.onclose = () => {
             console.log('[BrowserCanvas] WebSocket disconnected');
+            if (!this._intentionalClose && this.sessionId) {
+                this._attemptReconnect();
+            }
         };
 
         this.ws.onerror = (err) => {
@@ -385,13 +485,69 @@ class BrowserCanvas {
         }, 1000);
     }
 
+    _attemptReconnect() {
+        if (this._reconnectAttempts >= this._maxReconnectAttempts) {
+            this.container.dispatchEvent(new CustomEvent('connectionLost', { detail: {} }));
+            return;
+        }
+        this._reconnectAttempts++;
+        const attempt = this._reconnectAttempts;
+        console.log(`[BrowserCanvas] Reconnecting (${attempt}/${this._maxReconnectAttempts})...`);
+        this.container.dispatchEvent(new CustomEvent('reconnecting', {
+            detail: { attempt, max: this._maxReconnectAttempts }
+        }));
+        this._reconnectTimer = setTimeout(() => {
+            if (this._intentionalClose || !this.sessionId) return;
+            this._connectWebSocket();
+        }, 3000);
+    }
+
     // ============ Public API ============
+
+    /**
+     * Set interaction mode: 'navigate' | 'capture_list' | 'capture_text'
+     */
+    setMode(mode) {
+        if (this.interactionMode === mode) return;
+        const prev = this.interactionMode;
+        this.interactionMode = mode;
+
+        // Clear highlight state on mode switch
+        this.hoveredElement = null;
+        this.tooltip.style.display = 'none';
+        this._renderOverlay();
+
+        // Update cursor style
+        this.interactionLayer.style.cursor =
+            mode === 'navigate' ? 'default' : 'crosshair';
+
+        // Notify backend to inject/remove list detection script
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'setMode', mode }));
+        }
+
+        this.container.dispatchEvent(new CustomEvent('modeChange', {
+            detail: { mode, previousMode: prev }
+        }));
+    }
+
+    /**
+     * Get current interaction mode
+     */
+    getMode() {
+        return this.interactionMode;
+    }
 
     /**
      * Initialize session - load URL and connect WebSocket
      */
     async initSession(url, options = {}) {
         this._showLoading('Loading page...');
+        this._intentionalClose = false;
+
+        const timeoutMs = options.timeout || 30000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs + 5000);
 
         try {
             const response = await fetch(`${API_BASE}/sessions`, {
@@ -402,9 +558,16 @@ class BrowserCanvas {
                     viewport_width: options.viewportWidth || 1280,
                     viewport_height: options.viewportHeight || 800,
                     wait_for: options.waitFor || null,
-                    timeout_ms: options.timeout || 30000
-                })
+                    timeout_ms: timeoutMs
+                }),
+                signal: controller.signal
             });
+
+            clearTimeout(timeoutId);
+
+            if (response.status === 410) {
+                throw new Error('Session expired');
+            }
 
             if (!response.ok) {
                 const error = await response.json();
@@ -430,11 +593,15 @@ class BrowserCanvas {
             return data;
 
         } catch (error) {
-            console.error('Init session failed:', error);
+            clearTimeout(timeoutId);
+            const message = error.name === 'AbortError'
+                ? 'Page load timed out. Please check the URL or your network connection.'
+                : error.message;
+            console.error('Init session failed:', message);
             this.container.dispatchEvent(new CustomEvent('sessionError', {
-                detail: { error: error.message }
+                detail: { error: message }
             }));
-            throw error;
+            throw new Error(message);
         } finally {
             this._hideLoading();
         }
@@ -444,6 +611,12 @@ class BrowserCanvas {
      * Close session and WebSocket
      */
     async closeSession() {
+        this._intentionalClose = true;
+        if (this._reconnectTimer) {
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = null;
+        }
+
         if (this._fpsInterval) {
             clearInterval(this._fpsInterval);
             this._fpsInterval = null;
@@ -499,6 +672,15 @@ class BrowserCanvas {
     requestAnalyze() {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({ type: 'analyze' }));
+        }
+    }
+
+    /**
+     * Re-inject list detection script (e.g. after page navigation)
+     */
+    reinjectListDetection() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.interactionMode === 'capture_list') {
+            this.ws.send(JSON.stringify({ type: 'setMode', mode: 'capture_list' }));
         }
     }
 

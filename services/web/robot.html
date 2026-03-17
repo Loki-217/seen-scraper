@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SeenFetch - Robot</title>
+  <link rel="stylesheet" href="css/robot.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="topbar-brand" href="index.html">
+        <span class="brand-icon">👁️</span>
+        <span class="brand-text">SeenFetch</span>
+      </a>
+      <div class="topbar-robot-name" id="topbarRobotName"></div>
+    </div>
+  </header>
+
+  <nav class="tab-bar">
+    <div class="tab-bar-inner">
+      <div class="tab active">Quick Setup</div>
+      <div class="tab" style="color:#d1d5db;cursor:default;pointer-events:none;">Monitor <span style="font-size:10px;background:#374151;color:#9ca3af;padding:1px 6px;border-radius:8px;margin-left:4px;">Coming soon</span></div>
+    </div>
+  </nav>
+
+  <main class="content">
+    <div class="content-inner">
+      <div class="content-body">
+        <!-- Robot Name -->
+        <section class="section">
+          <label class="field-label">Robot name</label>
+          <input type="text" class="name-input" id="robotNameInput" />
+        </section>
+
+        <!-- Review the result -->
+        <section class="section" id="reviewSection">
+          <h2 class="section-title">Review the result</h2>
+          <p class="section-desc" id="reviewDesc"></p>
+
+          <!-- Run info card -->
+          <div class="run-info-card" id="runInfoCard" style="display:none">
+            <div class="run-info-left">
+              <div class="run-info-status" id="runInfoStatus"></div>
+              <div class="run-info-url" id="runInfoUrl"></div>
+            </div>
+            <div class="run-info-right">
+              <div class="run-info-time" id="runInfoTime"></div>
+              <div class="run-info-stats" id="runInfoStats"></div>
+            </div>
+          </div>
+
+          <!-- Data table area -->
+          <div id="dataArea" style="display:none">
+            <div class="data-header">
+              <div class="data-header-left">
+                <span class="data-title" id="dataTitle"></span>
+                <span class="data-count" id="dataCount"></span>
+              </div>
+              <div class="download-group">
+                <button class="btn-download" id="btnDownloadCSV">📥 CSV</button>
+                <button class="btn-download" id="btnDownloadJSON">📥 JSON</button>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table class="data-table" id="dataTable">
+                <thead id="dataTableHead"></thead>
+                <tbody id="dataTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Empty / no-data state -->
+          <div class="empty-state" id="emptyState" style="display:none"></div>
+        </section>
+
+        <!-- Action buttons -->
+        <div class="actions">
+          <button class="btn-run" id="btnRun">▶ Run Task</button>
+          <button class="btn-delete" id="btnDelete">🗑 Delete Robot</button>
+        </div>
+      </div>
+
+      <!-- Steps card (floating right) -->
+      <aside class="steps-card">
+        <p class="steps-intro">Set up your new robot in 2 quick steps:</p>
+        <div class="step done">
+          <span class="step-icon">✅</span>
+          <span>Name the robot</span>
+        </div>
+        <div class="step current">
+          <span class="step-dot"></span>
+          <span>Review its result</span>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Loading overlay -->
+  <div class="loading-overlay" id="loadingOverlay" style="display:none">
+    <div class="loading-content">
+      <div class="spinner"></div>
+      <p class="loading-text">Running robot... This may take up to a minute.</p>
+    </div>
+  </div>
+
+  <script src="js/robot.js"></script>
+</body>
+</html>

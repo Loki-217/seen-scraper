@@ -159,6 +159,7 @@ class RobotExecutor:
         if not self.robot.item_selector or not self.robot.fields:
             return []
 
+        print(f"[DEBUG] Extracting with fields: {[(f.name, f.selector) for f in self.robot.fields]}")
         # 构建提取脚本
         fields_config = [
             {

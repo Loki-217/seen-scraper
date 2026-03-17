@@ -6,7 +6,11 @@
 - POST /smart/analyze          智能分析页面结构
 - POST /smart/validate-selector 验证选择器
 - POST /smart/detect-lists      仅检测列表
+- POST /smart/analyze-fields    AI 智能分析字段
 """
+
+import json
+import re
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -352,3 +356,318 @@ async def extract_preview(session_id: str, config: Dict[str, Any]):
             "error": str(e),
             "data": []
         }
+
+
+# ============ AI 智能分析字段 ============
+
+class RawItemDataRequest(BaseModel):
+    """AI 字段分析请求"""
+    rawItemData: Dict[str, Any] = Field(..., description="列表项原始数据 {texts, links, images}")
+
+
+class AnalyzedField(BaseModel):
+    """AI 分析后的字段"""
+    name: str
+    selector: str
+    attr: str
+    captureType: str = "list"
+
+
+class AnalyzeFieldsResponse(BaseModel):
+    """AI 字段分析响应"""
+    fields: List[AnalyzedField] = Field(default_factory=list)
+    aiEnhanced: bool = False
+
+
+def _build_analyze_fields_prompt(raw: Dict[str, Any]) -> str:
+    """构建 AI 分析 prompt"""
+    texts_desc = ""
+    for t in raw.get("texts", [])[:20]:
+        texts_desc += f"  [{t['index']}] tag=<{t.get('tag', '?')}> text=\"{t['text']}\"\n"
+
+    links_desc = ""
+    for l in raw.get("links", [])[:10]:
+        links_desc += f"  [{l['index']}] href=\"{l['href']}\" text=\"{l['text']}\"\n"
+
+    images_desc = ""
+    for img in raw.get("images", [])[:10]:
+        images_desc += f"  [{img['index']}] src=\"{img['src']}\" alt=\"{img['alt']}\"\n"
+
+    return f"""You are a web data extraction expert. Below is raw data extracted from one item in a webpage list.
+
+## Texts (text content of elements):
+{texts_desc or '  (none)'}
+
+## Links (<a> elements):
+{links_desc or '  (none)'}
+
+## Images (<img> elements):
+{images_desc or '  (none)'}
+
+## Task:
+1. Analyze the semantic meaning of each data fragment above.
+2. Filter out worthless fragments (whitespace, decorative icons, navigation boilerplate, duplicate content that is a parent containing child text).
+3. For each valuable fragment, assign a concise human-readable field name. Use the content's own language (Chinese names for Chinese content, English for English).
+4. Return ONLY a JSON array, no extra text.
+
+## Output format:
+[
+  {{"name": "field name", "source_type": "texts|links|images", "source_index": 0, "data_type": "text|link|image"}}
+]
+
+## Critical rules for source selection:
+- For human-readable text fields (names, titles, descriptions, ratings, dates, prices), ALWAYS use source_type="texts" with data_type="text". The texts array has more precise selectors pointing to specific text nodes.
+- Only use source_type="links" with data_type="link" when the field's VALUE is a URL (e.g. a detail page link, a profile link). The extracted value will be the href URL, NOT the link text.
+- Only use source_type="images" with data_type="image" when the field's VALUE is an image URL.
+- If the same text appears in both texts and links arrays, use the texts entry (its selector is more precise).
+- When a link element contains useful text AND a useful URL, create TWO separate fields: one from texts (for the text content) and one from links (for the URL).
+
+## Other rules:
+- Field names should be 2-6 characters, clear and descriptive.
+- If a text fragment is just a subset of a longer text already selected, skip the longer one (keep the more specific element).
+- Skip pure numbers that look like rankings (e.g. "1", "2", "3").
+- Return at most 10 fields.
+- Return ONLY the JSON array."""
+
+
+def _find_by_index(items: List[Dict], index: int) -> Optional[Dict]:
+    """Find item in rawItemData array by index field"""
+    for item in items:
+        if item.get("index") == index:
+            return item
+    return None
+
+
+def _find_text_with_same_content(texts: List[Dict], link_text: str) -> Optional[Dict]:
+    """Find a texts entry whose text matches a link's text content"""
+    if not link_text:
+        return None
+    link_text_clean = link_text.strip()
+    for t in texts:
+        t_text = (t.get("text") or "").strip()
+        if t_text and t.get("selector") and (t_text == link_text_clean or link_text_clean in t_text):
+            return t
+    return None
+
+
+def _map_ai_result_to_fields(ai_fields: List[Dict], raw: Dict[str, Any]) -> List[AnalyzedField]:
+    """Map AI analysis result back to selectors from rawItemData"""
+    result = []
+    seen_selectors = set()
+    texts = raw.get("texts", [])
+
+    for af in ai_fields:
+        source_type = af.get("source_type", "")
+        source_index = af.get("source_index", -1)
+        data_type = af.get("data_type", "text")
+        name = af.get("name", "")
+
+        if not name or source_type not in ("texts", "links", "images"):
+            continue
+
+        items = raw.get(source_type, [])
+        source_item = _find_by_index(items, source_index)
+
+        if not source_item:
+            continue
+
+        # Fix: if AI says links but data_type is text, redirect to texts array
+        if source_type == "links" and data_type == "text":
+            link_text = (source_item.get("text") or "").strip()
+            text_match = _find_text_with_same_content(texts, link_text)
+            if text_match and text_match.get("selector"):
+                print(f"[DEBUG] Redirecting '{name}' from links to texts (text='{link_text[:30]}')")
+                source_item = text_match
+                source_type = "texts"
+
+        selector = source_item.get("selector", "")
+        if not selector or selector in seen_selectors:
+            continue
+
+        # Determine attr based on source_type + data_type
+        if source_type == "links" and data_type == "link":
+            attr = "href"
+        elif source_type == "images" and data_type == "image":
+            attr = "src"
+        else:
+            attr = "text"
+
+        seen_selectors.add(selector)
+        result.append(AnalyzedField(
+            name=name,
+            selector=selector,
+            attr=attr,
+            captureType="list"
+        ))
+
+    # Log final fields
+    print(f"[DEBUG] Final fields:")
+    for f in result:
+        print(f"  {f.name} | selector={f.selector[:60]} | attr={f.attr}")
+
+    return result
+
+
+def _fallback_fields_from_raw(raw: Dict[str, Any]) -> List[AnalyzedField]:
+    """Fallback: generate basic fields from rawItemData without AI"""
+    fields = []
+    seen = set()
+
+    # First meaningful text → title (skip pure numbers, single chars)
+    texts = raw.get("texts", [])
+    title_item = None
+    for t in texts:
+        text_val = (t.get("text") or "").strip()
+        sel = t.get("selector", "")
+        if not sel or not text_val:
+            continue
+        # Skip pure numbers (e.g. rankings like "1", "2", "3")
+        if re.match(r'^\d+\.?$', text_val):
+            continue
+        # Skip very short text (single char)
+        if len(text_val) <= 1:
+            continue
+        title_item = t
+        break
+
+    if title_item:
+        fields.append(AnalyzedField(name="title", selector=title_item["selector"], attr="text"))
+        seen.add(title_item["selector"])
+
+    # First link → url
+    links = raw.get("links", [])
+    if links and links[0].get("selector") and links[0]["selector"] not in seen:
+        fields.append(AnalyzedField(name="url", selector=links[0]["selector"], attr="href"))
+        seen.add(links[0]["selector"])
+
+    # First image → image
+    images = raw.get("images", [])
+    if images and images[0].get("selector") and images[0]["selector"] not in seen:
+        fields.append(AnalyzedField(name="image", selector=images[0]["selector"], attr="src"))
+        seen.add(images[0]["selector"])
+
+    # Add more text fields beyond title (skip duplicates of title)
+    extra_count = 0
+    for t in texts:
+        if extra_count >= 3:
+            break
+        sel = t.get("selector", "")
+        text_val = (t.get("text") or "").strip()
+        if not sel or sel in seen or not text_val:
+            continue
+        if re.match(r'^\d+\.?$', text_val) or len(text_val) <= 1:
+            continue
+        fields.append(AnalyzedField(name=f"field_{extra_count + 1}", selector=sel, attr="text"))
+        seen.add(sel)
+        extra_count += 1
+
+    return fields
+
+
+@router.post("/analyze-fields", response_model=AnalyzeFieldsResponse, summary="AI 智能分析字段")
+async def analyze_fields(req: RawItemDataRequest):
+    """
+    使用 AI 分析列表项的原始数据，智能生成字段配置。
+
+    接收 rawItemData（texts/links/images），调用 DeepSeek API 分析语义，
+    返回带有 CSS selector 的字段列表。如果 AI 不可用则降级到基础提取。
+    """
+    raw = req.rawItemData
+    print(f"[DEBUG] analyze-fields called, texts={len(raw.get('texts',[]))} links={len(raw.get('links',[]))} images={len(raw.get('images',[]))}")
+
+    # Print all texts for debugging
+    print("[DEBUG] rawItemData texts:")
+    for i, t in enumerate(raw.get("texts", [])):
+        print(f"  [{i}] text='{str(t.get('text',''))[:60]}' selector='{t.get('selector','')}'")
+    print("[DEBUG] rawItemData links:")
+    for i, l in enumerate(raw.get("links", [])):
+        print(f"  [{i}] text='{str(l.get('text',''))[:40]}' href='{str(l.get('href',''))[:60]}' selector='{l.get('selector','')}'")
+    print("[DEBUG] rawItemData images:")
+    for i, img in enumerate(raw.get("images", [])):
+        print(f"  [{i}] alt='{str(img.get('alt',''))[:40]}' src='{str(img.get('src',''))[:60]}' selector='{img.get('selector','')}'")
+
+    # Validate input has content
+    has_content = (
+        len(raw.get("texts", [])) > 0 or
+        len(raw.get("links", [])) > 0 or
+        len(raw.get("images", [])) > 0
+    )
+    if not has_content:
+        print("[DEBUG] analyze-fields: no content, returning empty")
+        return AnalyzeFieldsResponse(fields=[], aiEnhanced=False)
+
+    print(f"[DEBUG] ai_service.enabled={ai_service.enabled}")
+    print(f"[DEBUG] API key exists: {bool(ai_service.api_key)}, key prefix: {ai_service.api_key[:8] if ai_service.api_key else 'None'}")
+    print(f"[DEBUG] endpoint_id: {ai_service.endpoint_id}")
+    print(f"[DEBUG] api_base: {ai_service.api_base}")
+
+    # Try AI analysis
+    if ai_service.enabled:
+        try:
+            prompt = _build_analyze_fields_prompt(raw)
+            print(f"[DEBUG] prompt built, length={len(prompt)}, first 300 chars:")
+            print(prompt[:300])
+
+            import httpx
+            headers = {
+                'Authorization': f'Bearer {ai_service.api_key}',
+                'Content-Type': 'application/json'
+            }
+            payload = {
+                'model': ai_service.endpoint_id,
+                'messages': [
+                    {
+                        'role': 'system',
+                        'content': 'You are a web data extraction expert. You analyze HTML element data and identify meaningful fields. Respond ONLY with valid JSON.'
+                    },
+                    {
+                        'role': 'user',
+                        'content': prompt
+                    }
+                ],
+                'temperature': 0.1,
+                'max_tokens': 800
+            }
+
+            print(f"[AI] analyze-fields: calling DeepSeek API...")
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    f'{ai_service.api_base}/chat/completions',
+                    headers=headers,
+                    json=payload
+                )
+                print(f"[DEBUG] DeepSeek HTTP status: {response.status_code}")
+                print(f"[DEBUG] DeepSeek raw response: {response.text[:500]}")
+                response.raise_for_status()
+
+                data = response.json()
+                content = data['choices'][0]['message']['content'].strip()
+                print(f"[AI] analyze-fields AI content: {content[:500]}")
+
+                # Parse JSON array from response
+                # Try to extract JSON array even if wrapped in markdown
+                json_match = re.search(r'\[[\s\S]*\]', content)
+                if json_match:
+                    ai_fields = json.loads(json_match.group())
+                else:
+                    raise ValueError(f"No JSON array found in AI response: {content[:200]}")
+
+                print(f"[DEBUG] AI returned {len(ai_fields)} raw fields: {ai_fields}")
+                fields = _map_ai_result_to_fields(ai_fields, raw)
+                print(f"[DEBUG] Mapped to {len(fields)} fields with selectors")
+
+                if fields:
+                    print(f"[DEBUG] Returning AI fields: {[(f.name, f.selector, f.attr) for f in fields]}")
+                    return AnalyzeFieldsResponse(fields=fields, aiEnhanced=True)
+                else:
+                    print("[AI] analyze-fields: AI returned fields but none mapped to selectors, falling back")
+
+        except Exception as e:
+            print(f"[AI] analyze-fields failed, error type: {type(e).__name__}")
+            print(f"[AI] analyze-fields error: {str(e)[:500]}")
+
+    # Fallback: basic extraction without AI
+    fallback = _fallback_fields_from_raw(raw)
+    print(f"[DEBUG] Fallback fields: {[(f.name, f.selector, f.attr) for f in fallback]}")
+    return AnalyzeFieldsResponse(fields=fallback, aiEnhanced=False)

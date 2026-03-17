@@ -88,6 +88,7 @@ class RunRobotResponse(BaseModel):
     duration_seconds: float
     result_file: Optional[str]
     error: Optional[str]
+    items: Optional[List[dict]] = None
 
 
 # ============ 辅助函数 ============
@@ -184,6 +185,7 @@ def create_robot(req: CreateRobotRequest):
             fields_json=json.dumps(req.fields, ensure_ascii=False) if req.fields else None,
             pagination_json=json.dumps(req.pagination, ensure_ascii=False) if req.pagination else None,
         )
+        print(f"[DEBUG] Creating robot, fields_json: {req.fields}")
         s.add(robot_db)
         s.commit()
         s.refresh(robot_db)
@@ -295,4 +297,5 @@ async def run_robot(robot_id: str):
         duration_seconds=result.duration_seconds,
         result_file=result_file,
         error=result.error,
+        items=result.items if result.success else None,
     )

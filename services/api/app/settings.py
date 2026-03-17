@@ -1,6 +1,19 @@
 # services/api/app/settings.py
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _find_env_file() -> str:
+    """从 settings.py 所在目录向上查找 .env 文件（最多 3 层）"""
+    current = Path(__file__).resolve().parent
+    for _ in range(4):  # app -> api -> services -> project root
+        candidate = current / ".env"
+        if candidate.is_file():
+            return str(candidate)
+        current = current.parent
+    return ".env"  # fallback to cwd
 
 
 class Settings(BaseSettings):
@@ -10,12 +23,12 @@ class Settings(BaseSettings):
     app_name: str = "SeenFetch"
     app_tagline: str = "See it, Fetch it - Visual Web Data Extraction"
     app_description: str = "No-code web scraping tool for everyone"
-    
-    
+
+
     cors_allow_origins: list[str] = Field(default_factory=lambda: ["*"])
     uvicorn_host: str = "127.0.0.1"
     uvicorn_port: int = 8000
-    
+
     # 🔥 火山引擎 DeepSeek 配置
     deepseek_api_key: str = Field(
         default="",
@@ -36,7 +49,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="SEENFETCH_",
-        env_file=".env",
+        env_file=_find_env_file(),
         case_sensitive=False,
     )
 

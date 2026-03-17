@@ -1,117 +1,38 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SeenFetch Studio - See it, Fetch it</title>
-    <meta name="description" content="SeenFetch: Visual web data extraction tool. No coding required.">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
-    <link rel="stylesheet" href="css/studio.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SeenFetch - Dashboard</title>
+  <link rel="stylesheet" href="css/home.css" />
 </head>
 <body>
 
-<!-- Top Bar -->
-<header class="topbar">
-    <div class="brand">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-brand">
         <span class="brand-icon">👁️</span>
-        <span class="brand-name">SeenFetch</span>
-        <span class="brand-badge">Studio</span>
+        <span class="brand-text">SeenFetch</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="content">
+    <div class="content-header">
+      <div class="content-header-left">
+        <h1 class="content-title">My Robots</h1>
+        <span class="stats-badge" id="statsBadge"></span>
+      </div>
+      <button class="btn-new-robot" id="btnNewRobot">+ Build New Robot</button>
     </div>
 
-    <div class="url-input-wrapper">
-        <span class="url-prefix">🔗</span>
-        <input type="url" class="url-input" id="urlInput"
-               placeholder="Enter URL to start extracting data..."
-               value="https://quotes.toscrape.com/">
+    <div class="search-row">
+      <input type="text" class="search-input" id="searchInput" placeholder="Search" />
     </div>
 
-    <button class="btn btn-topbar" id="loadBtn" onclick="startSession()">Load</button>
-    <button class="btn btn-topbar btn-topbar-danger hidden" id="closeBtn" onclick="closeSession()">End</button>
+    <div id="robotList" class="robot-list"></div>
+  </main>
 
-    <div class="session-status" id="sessionStatus">
-        <span class="status-dot"></span>
-        <span class="status-text">Ready</span>
-    </div>
-</header>
-
-<!-- Workspace -->
-<main class="workspace">
-    <div class="workspace-main">
-        <!-- Browser Pane -->
-        <section class="browser-pane">
-            <!-- Browser Toolbar -->
-            <div class="browser-toolbar">
-                <span class="toolbar-url" id="currentUrl">No page loaded</span>
-                <div class="toolbar-actions">
-                    <button class="btn btn-sm btn-secondary" onclick="canvas && canvas.requestElements()" title="Refresh elements">🔄</button>
-                </div>
-            </div>
-
-            <!-- Browser Canvas Container -->
-            <div class="browser-container" id="browserContainer">
-                <!-- Empty state -->
-                <div class="empty-state" id="emptyState">
-                    <div class="empty-icon">👁️</div>
-                    <p>Enter a URL and click <strong>Load</strong> to start</p>
-                    <p class="text-muted">Real-time page preview with element detection</p>
-                </div>
-            </div>
-
-            <!-- Browser Status Bar -->
-            <div class="browser-statusbar">
-                <span>Elements: <strong id="elementCount">0</strong></span>
-                <span>Selected: <strong id="selectionCount">0</strong></span>
-                <span>FPS: <strong id="frameRate">0</strong></span>
-            </div>
-
-            <!-- Bottom Preview Dock -->
-            <div class="preview-dock collapsed" id="previewDock">
-                <div class="dock-header" onclick="togglePreviewDock()">
-                    <div class="dock-title">
-                        <span>📋</span>
-                        <span>Output Data Preview</span>
-                        <span id="previewItemCount" class="dock-count"></span>
-                    </div>
-                    <button class="dock-toggle" id="dockToggleBtn">↑</button>
-                </div>
-                <div class="dock-body" id="dockBody">
-                    <div id="dockPreviewTable" class="dock-table-container">
-                        <div class="dock-empty">
-                            It looks like you have not selected anything for extraction yet.
-                            Once you do, you will see a preview of your selections here.
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Guide Pane (right side) -->
-        <aside class="config-pane">
-            <!-- Guide icon -->
-            <div class="guide-icon-area">
-                <div class="guide-icon-circle">👁️</div>
-            </div>
-
-            <!-- Guide content (state machine renders here) -->
-            <div class="guide-content" id="guideContent">
-                <!-- Rendered by JS -->
-            </div>
-
-            <!-- Fixed footer -->
-            <div class="guide-footer">
-                <button class="btn-discard" onclick="discardRobot()">⊘ Discard</button>
-                <button class="btn-finish" id="finishBtn" onclick="saveAsRobot()" disabled>Finish</button>
-            </div>
-        </aside>
-    </div>
-</main>
-
-<!-- Toast Container -->
-<div id="toastContainer"></div>
-
-<!-- Scripts -->
-<script src="js/browser-canvas.js"></script>
-<script src="js/studio.js"></script>
-
+  <script src="js/home.js"></script>
 </body>
 </html>

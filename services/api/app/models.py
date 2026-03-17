@@ -121,6 +121,13 @@ class RobotDB(Base):
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     run_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
+    # === Future: Monitor fields ===
+    # monitor_enabled: bool
+    # monitor_frequency: str (cron expression)
+    # monitor_diff_mode: str ('visual' | 'content' | 'data')
+    # last_monitor_at: datetime
+    # === End Future ===
+
     # 关联
     schedules: Mapped[List["ScheduleDB"]] = relationship(
         back_populates="robot", cascade="all, delete-orphan"

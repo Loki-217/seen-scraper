@@ -952,6 +952,51 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- Recorded Steps ---------- */
+#recordedSteps {
+    padding: 0 20px;
+    color: var(--panel-text);
+}
+.recorded-steps-list {
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.recorded-steps-list::-webkit-scrollbar { width: 4px; }
+.recorded-steps-list::-webkit-scrollbar-track { background: transparent; }
+.recorded-steps-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+.recorded-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--panel-surface);
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+.step-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(102, 126, 234, 0.2);
+    color: var(--primary-light);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.step-desc {
+    color: var(--panel-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* ---------- Scrollbar (dark panel) ---------- */
 .guide-content::-webkit-scrollbar { width: 5px; }
 .guide-content::-webkit-scrollbar-track { background: transparent; }

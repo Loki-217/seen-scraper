@@ -369,6 +369,45 @@ async def websocket_screencast(websocket: WebSocket, session_id: str):
                     "pagination": [p.dict() for p in pg_results]
                 })
 
+            # Inject/remove list detection script on mode change
+            elif event_type == "setMode":
+                mode = data.get("mode", "navigate")
+                if mode == "capture_list":
+                    await session.inject_list_detection_script()
+                else:
+                    await session.remove_list_detection_script()
+
+            # Confirm list selection in capture_list mode
+            elif event_type == "confirmListSelection":
+                detected = await session.get_detected_list()
+                print(f"[DEBUG] detected list keys: {list(detected.keys()) if detected else 'None'}")
+                print(f"[DEBUG] rawItemData present in detected: {'rawItemData' in detected if detected else 'N/A'}")
+                if detected and detected.get("rawItemData"):
+                    rid = detected["rawItemData"]
+                    print(f"[DEBUG] rawItemData texts={len(rid.get('texts',[]))} links={len(rid.get('links',[]))} images={len(rid.get('images',[]))}")
+                if detected and detected.get("itemCount", 0) >= 2:
+                    msg = {
+                        "type": "listCaptured",
+                        "containerSelector": detected.get("containerSelector", ""),
+                        "itemSelector": detected.get("itemSelector", ""),
+                        "itemCount": detected.get("itemCount", 0),
+                        "sampleItems": detected.get("sampleItems", []),
+                        "detectedFields": detected.get("detectedFields", []),
+                        "rawItemData": detected.get("rawItemData", None)
+                    }
+                    print(f"[DEBUG] listCaptured message keys: {list(msg.keys())}")
+                    print(f"[DEBUG] rawItemData in message: {msg.get('rawItemData') is not None}")
+                    await websocket.send_json(msg)
+                else:
+                    await websocket.send_json({
+                        "type": "listCaptured",
+                        "containerSelector": "",
+                        "itemSelector": "",
+                        "itemCount": 0,
+                        "sampleItems": [],
+                        "error": "No list detected at current position. Hover over a list item first."
+                    })
+
             # Find similar elements
             elif event_type == "findSimilar":
                 selector = data.get("selector", "")

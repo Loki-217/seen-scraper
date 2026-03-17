@@ -12,8 +12,11 @@ let currentSession = null;
 let configuredFields = [];
 let paginationConfig = null;
 let smartResult = null;
-let guideState = 'initial';   // 'initial' | 'captureType' | 'smartDetect' | 'manualSelect' | 'configuring'
+let guideState = 'initial';   // 'initial' | 'captureType' | 'listSelect' | 'smartDetect' | 'manualSelect' | 'configuring'
 let previewDockExpanded = false;
+let recordedSteps = [];          // Recorded action steps
+let lastRecordedUrl = '';        // Track URL changes to avoid duplicates
+let maxRowsSetting = null;       // null | 10 | 100 | custom number
 
 // ---------- DOM References ----------
 
@@ -45,6 +48,10 @@ async function startSession() {
             $('currentUrl').textContent = e.detail.pageInfo?.url || url;
             $('elementCount').textContent = e.detail.elements?.length || 0;
             setStatus('connected', 'Connected');
+            // Record initial navigation step
+            const navUrl = e.detail.pageInfo?.url || url;
+            lastRecordedUrl = navUrl;
+            recordStep('navigation', { url: navUrl });
             setGuideState('initial');
         });
 
@@ -82,8 +89,93 @@ async function startSession() {
         });
 
         container.addEventListener('analyzeResult', (e) => {
+            if (_analyzeTimeout) { clearTimeout(_analyzeTimeout); _analyzeTimeout = null; }
             smartResult = e.detail;
             setGuideState('configuring');
+        });
+
+        container.addEventListener('analyzeError', (e) => {
+            if (_analyzeTimeout) { clearTimeout(_analyzeTimeout); _analyzeTimeout = null; }
+            showToast('Smart detect failed. Try "From a list" to select manually.', 'warning', 5000);
+            setGuideState('captureType');
+        });
+
+        container.addEventListener('listCaptured', (e) => {
+            const d = e.detail;
+            console.log('[DEBUG] listCaptured event detail keys:', JSON.stringify(Object.keys(d)));
+            console.log('[DEBUG] rawItemData exists:', !!d.rawItemData);
+            if (d.rawItemData) {
+                console.log('[DEBUG] rawItemData texts count:', d.rawItemData.texts?.length);
+                console.log('[DEBUG] rawItemData links count:', d.rawItemData.links?.length);
+                console.log('[DEBUG] rawItemData images count:', d.rawItemData.images?.length);
+            }
+            if (d.error) {
+                showToast(d.error, 'warning');
+                return;
+            }
+            if (d.itemCount < 2) {
+                showToast('No list detected at this position. Try hovering over a different item.', 'warning');
+                return;
+            }
+
+            recordStep('captured_list', {
+                name: 'List',
+                selector: d.itemSelector,
+                containerSelector: d.containerSelector,
+                itemCount: d.itemCount,
+                sampleItems: d.sampleItems || [],
+                fields: []
+            });
+            renderRecordedSteps();
+            showToast(`List captured: ${d.itemCount} items`, 'success');
+
+            // If rawItemData is available, try AI analysis first
+            if (d.rawItemData && (d.rawItemData.texts?.length || d.rawItemData.links?.length || d.rawItemData.images?.length)) {
+                _analyzeFieldsWithAI(d);
+                return;
+            }
+
+            // No rawItemData — use legacy field building
+            _buildFieldsFromLegacyData(d);
+        });
+
+        container.addEventListener('textCaptured', (e) => {
+            const el = e.detail.element;
+            recordStep('captured_text', {
+                name: el.text?.substring(0, 20) || el.tag,
+                selector: el.selector,
+                sampleValue: el.text || ''
+            });
+            renderRecordedSteps();
+            showToast(`Element captured: ${el.tag} "${(el.text || '').substring(0, 30)}"`, 'success');
+        });
+
+        container.addEventListener('pageInfo', (e) => {
+            const newUrl = e.detail.url;
+            if (newUrl && newUrl !== lastRecordedUrl) {
+                lastRecordedUrl = newUrl;
+                $('currentUrl').textContent = newUrl;
+                recordStep('navigation', { url: newUrl });
+                renderRecordedSteps();
+                // Re-inject list detection script if in capture_list mode
+                if (canvas && canvas.getMode() === 'capture_list') {
+                    canvas.reinjectListDetection();
+                }
+            }
+        });
+
+        container.addEventListener('modeChange', (e) => {
+            console.log(`[Studio] Mode changed: ${e.detail.previousMode} → ${e.detail.mode}`);
+        });
+
+        container.addEventListener('navigateClick', (e) => {
+            recordStep('interaction', {
+                action: 'click',
+                selector: e.detail.selector,
+                x: e.detail.x,
+                y: e.detail.y
+            });
+            renderRecordedSteps();
         });
 
         container.addEventListener('similarFound', (e) => {
@@ -92,6 +184,20 @@ async function startSession() {
 
         container.addEventListener('sessionError', (e) => {
             showToast(`Error: ${e.detail.error}`, 'error');
+            closeSession();
+        });
+
+        container.addEventListener('reconnecting', (e) => {
+            setStatus('connecting', `Reconnecting (${e.detail.attempt}/${e.detail.max})...`);
+        });
+
+        container.addEventListener('connectionLost', () => {
+            showToast('Connection lost. Please reload the page.', 'error', 10000);
+            closeSession();
+        });
+
+        container.addEventListener('sessionExpired', () => {
+            showToast('Session expired. Please start a new session.', 'warning', 5000);
             closeSession();
         });
 
@@ -115,6 +221,9 @@ async function closeSession() {
     smartResult = null;
     configuredFields = [];
     paginationConfig = null;
+    maxRowsSetting = null;
+    recordedSteps = [];
+    lastRecordedUrl = '';
 
     $('loadBtn').classList.remove('hidden');
     $('closeBtn').classList.add('hidden');
@@ -145,7 +254,11 @@ async function closeSession() {
 function discardRobot() {
     configuredFields = [];
     paginationConfig = null;
+    maxRowsSetting = null;
     smartResult = null;
+    recordedSteps = [];
+    lastRecordedUrl = currentSession?.pageInfo?.url || '';
+    if (canvas) canvas.setMode('navigate');
     updateFinishBtn();
     if (currentSession) {
         setGuideState('initial');
@@ -176,11 +289,15 @@ function renderGuidePanel() {
     switch (guideState) {
         case 'initial':      renderInitialGuide(panel); break;
         case 'captureType':  renderCaptureTypeGuide(panel); break;
+        case 'listSelect':   renderListSelectGuide(panel); break;
         case 'smartDetect':  renderSmartDetectGuide(panel); break;
         case 'manualSelect': renderManualSelectGuide(panel); break;
         case 'configuring':  renderConfiguringGuide(panel); break;
         default:             renderInitialGuide(panel); break;
     }
+
+    // Append recorded steps below guide content
+    renderRecordedSteps();
 }
 
 function renderInitialGuide(panel) {
@@ -228,14 +345,14 @@ function renderCaptureTypeGuide(panel) {
         <div class="guide-title">Choose a capture type</div>
         <div class="guide-subtitle">How would you like to select data from this page?</div>
 
-        <button class="guide-btn" onclick="startSmartDetect()">
+        <button class="guide-btn" onclick="startListCapture()">
             <span class="guide-btn-icon">📋</span>
             <span class="guide-btn-text">From a list</span>
             <span class="guide-btn-arrow">›</span>
         </button>
         <div class="guide-hint">For repeating items like products, results</div>
 
-        <button class="guide-btn" onclick="setGuideState('manualSelect')">
+        <button class="guide-btn" onclick="startTextCapture()">
             <span class="guide-btn-icon">T</span>
             <span class="guide-btn-text">Just text</span>
             <span class="guide-btn-arrow">›</span>
@@ -251,10 +368,217 @@ function renderCaptureTypeGuide(panel) {
     `;
 }
 
-function startSmartDetect() {
+function startListCapture() {
+    if (canvas) canvas.setMode('capture_list');
+    setGuideState('listSelect');
+}
+
+function renderListSelectGuide(panel) {
+    // Show captured lists if any
+    const capturedLists = recordedSteps.filter(s => s.type === 'captured_list' && s.details.itemCount >= 2);
+    let capturedHtml = '';
+    if (capturedLists.length) {
+        capturedHtml = capturedLists.map((step, i) => {
+            const d = step.details;
+            return `
+                <div class="detect-card-dark" style="margin-bottom:8px;">
+                    <div class="detect-card-dark-header">
+                        <strong>List ${i + 1}</strong>
+                        <span class="badge-dark">${d.itemCount} items</span>
+                    </div>
+                    <div class="detect-card-dark-body">
+                        <div class="detect-selector-dark">${escapeHtml(d.selector)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    panel.innerHTML = `
+        <div class="step-title">Step 2: Select a List</div>
+        <div class="guide-subtitle" style="text-align:left;">
+            Hover over a list on the page. Similar items will be highlighted with dashed outlines.
+            Click to confirm the list selection.
+        </div>
+
+        <div class="guide-hint" style="margin-top:12px;">
+            <span style="color:var(--panel-text-muted);font-size:12px;">
+                Tip: Hover over different items to see how the list detection changes.
+                The dashed outlines show all detected siblings.
+            </span>
+        </div>
+
+        ${capturedHtml}
+
+        <hr class="guide-divider">
+        <button class="guide-btn" onclick="switchToSmartDetect()" style="padding:10px 14px;font-size:13px;">
+            <span class="guide-btn-icon">🤖</span>
+            <span class="guide-btn-text">Use Smart Detect instead</span>
+            <span class="guide-btn-arrow">›</span>
+        </button>
+    `;
+}
+
+function switchToSmartDetect() {
+    // Keep capture_list mode but trigger AI analysis
     setGuideState('smartDetect');
-    if (canvas) {
-        canvas.requestAnalyze();
+    if (canvas) canvas.requestAnalyze();
+}
+
+function startTextCapture() {
+    if (canvas) canvas.setMode('capture_text');
+    setGuideState('manualSelect');
+}
+
+let _analyzeTimeout = null;
+
+function startSmartDetect() {
+    if (canvas) canvas.setMode('capture_list');
+    setGuideState('smartDetect');
+    if (canvas) canvas.requestAnalyze();
+    // Timeout: if no result in 15s, fall back
+    if (_analyzeTimeout) clearTimeout(_analyzeTimeout);
+    _analyzeTimeout = setTimeout(() => {
+        if (guideState === 'smartDetect') {
+            showToast('Smart detect timed out. Try "From a list" to select manually.', 'warning', 5000);
+            setGuideState('captureType');
+        }
+    }, 15000);
+}
+
+// ---------- AI Field Analysis ----------
+
+async function _analyzeFieldsWithAI(d) {
+    console.log('[DEBUG] _analyzeFieldsWithAI called');
+    console.log('[DEBUG] fetch URL:', `${API_BASE}/smart/analyze-fields`);
+    // Show loading state in configuring panel
+    setGuideState('configuring');
+    _showAnalyzingOverlay(true);
+
+    try {
+        const body = JSON.stringify({ rawItemData: d.rawItemData });
+        console.log('[DEBUG] request body length:', body.length);
+        const res = await fetch(`${API_BASE}/smart/analyze-fields`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: body
+        });
+        console.log('[DEBUG] analyze-fields response status:', res.status);
+        const result = await res.json();
+        console.log('[DEBUG] analyze-fields result:', JSON.stringify(result).substring(0, 500));
+
+        _showAnalyzingOverlay(false);
+
+        if (result.fields && result.fields.length > 0) {
+            // Use AI-analyzed fields
+            result.fields.forEach(f => {
+                addField({
+                    name: f.name,
+                    selector: f.selector,
+                    attr: f.attr,
+                    type: f.attr === 'href' ? 'link' : (f.attr === 'src' ? 'image' : 'text'),
+                    confidence: 0,
+                    sampleValues: [],
+                    itemSelector: d.itemSelector
+                });
+            });
+
+            // Build smartResult for the configuring panel
+            if (!smartResult) smartResult = { lists: [] };
+            smartResult.lists.push({
+                name: 'Captured List',
+                item_selector: d.itemSelector,
+                item_count: d.itemCount,
+                suggested_fields: result.fields.map(f => ({
+                    name: f.name,
+                    selector: f.selector,
+                    attr: f.attr,
+                    type: f.attr === 'href' ? 'link' : (f.attr === 'src' ? 'image' : 'text'),
+                    sample_values: []
+                }))
+            });
+
+            const label = result.aiEnhanced ? 'AI analyzed' : 'Auto detected';
+            showToast(`${label}: ${result.fields.length} fields`, 'success');
+        } else {
+            // AI returned no fields, fall back to legacy
+            _buildFieldsFromLegacyData(d);
+        }
+    } catch (err) {
+        console.warn('[Studio] AI analyze-fields failed:', err);
+        _showAnalyzingOverlay(false);
+        // Fallback to legacy detection
+        _buildFieldsFromLegacyData(d);
+        showToast('AI analysis unavailable, using basic detection', 'warning');
+    }
+
+    renderGuidePanel();
+    updateFinishBtn();
+}
+
+function _buildFieldsFromLegacyData(d) {
+    const autoFields = [];
+    if (d.detectedFields && d.detectedFields.length > 0) {
+        const sampleValues = d.sampleItems?.[0] || {};
+        d.detectedFields.forEach(f => {
+            const svKey = f.name === 'url' ? 'url' : f.name;
+            const sv = sampleValues[svKey] || '';
+            autoFields.push({
+                name: f.name,
+                selector: f.selector,
+                attr: f.attr,
+                type: f.type || 'text',
+                confidence: 0,
+                sampleValues: sv ? [sv] : [],
+                itemSelector: d.itemSelector
+            });
+        });
+    } else if (d.sampleItems && d.sampleItems.length > 0) {
+        const sample = d.sampleItems[0];
+        if (sample.title) autoFields.push({ name: 'title', selector: 'h1,h2,h3,h4,h5,h6,[class*="title"],[class*="name"]', attr: 'text', type: 'text', confidence: 0, sampleValues: [sample.title], itemSelector: d.itemSelector });
+        if (sample.url) autoFields.push({ name: 'url', selector: 'a[href]', attr: 'href', type: 'link', confidence: 0, sampleValues: [sample.url], itemSelector: d.itemSelector });
+        if (sample.image) autoFields.push({ name: 'image', selector: 'img', attr: 'src', type: 'image', confidence: 0, sampleValues: [sample.image], itemSelector: d.itemSelector });
+    }
+
+    if (autoFields.length > 0) {
+        if (!smartResult) smartResult = { lists: [] };
+        smartResult.lists.push({
+            name: 'Captured List',
+            item_selector: d.itemSelector,
+            item_count: d.itemCount,
+            suggested_fields: autoFields.map(f => ({
+                name: f.name,
+                selector: f.selector,
+                attr: f.attr,
+                type: f.type,
+                sample_values: f.sampleValues
+            }))
+        });
+    }
+
+    setGuideState('configuring');
+    updateFinishBtn();
+}
+
+function _showAnalyzingOverlay(show) {
+    const panel = $('guidePanel');
+    if (!panel) return;
+    const existing = panel.querySelector('.ai-analyzing-overlay');
+    if (show) {
+        if (existing) return;
+        const overlay = document.createElement('div');
+        overlay.className = 'ai-analyzing-overlay';
+        overlay.innerHTML = `
+            <div class="guide-loading">
+                <div class="spinner"></div>
+                <p>Analyzing data structure...</p>
+            </div>
+        `;
+        overlay.style.cssText = 'position:absolute;inset:0;background:rgba(17,24,39,0.85);display:flex;align-items:center;justify-content:center;z-index:10;border-radius:12px;';
+        panel.style.position = 'relative';
+        panel.appendChild(overlay);
+    } else {
+        if (existing) existing.remove();
     }
 }
 
@@ -298,9 +622,6 @@ function renderManualSelectGuide(panel) {
 
         <div class="step-detail" style="margin-bottom:12px;">Selected fields (${configuredFields.length}):</div>
         ${fieldsHtml || '<div style="color:var(--panel-text-dim);font-size:13px;padding:12px 0;">No fields selected yet. Click elements on the page.</div>'}
-
-        <hr class="guide-divider">
-        ${renderPaginationSection()}
     `;
 }
 
@@ -363,14 +684,20 @@ function renderConfiguringGuide(panel) {
         `;
     }
 
+    // Check if a list with >= 2 items has been captured
+    const hasCapturedList = lists.some(l => (l.item_count || l.count || 0) >= 2);
+    const listPaginationHtml = hasCapturedList ? `
+        <hr class="guide-divider">
+        ${renderListPaginationSection()}
+    ` : '';
+
     panel.innerHTML = `
         <div class="step-title">Step 2: Select Data</div>
         ${listsHtml}
 
         ${fieldsHtml ? '<hr class="guide-divider">' + fieldsHtml : ''}
 
-        <hr class="guide-divider">
-        ${renderPaginationSection()}
+        ${listPaginationHtml}
 
         <hr class="guide-divider">
         <button class="guide-btn guide-btn-success" onclick="runPreview()" ${configuredFields.length ? '' : 'disabled'}>
@@ -381,12 +708,32 @@ function renderConfiguringGuide(panel) {
     `;
 }
 
-function renderPaginationSection() {
+function renderListPaginationSection() {
+    // Max rows selection
+    const current = maxRowsSetting;
+    const rowOptions = [10, 100];
+    const isCustom = current !== null && !rowOptions.includes(current);
+
+    let maxRowsHtml = `
+        <div class="step-title">Step 3: Max Rows</div>
+        <div class="guide-subtitle" style="text-align:left;margin-bottom:8px;">How many rows to extract?</div>
+        <div class="pagination-type-group-dark">
+            ${rowOptions.map(n => `
+                <button class="pagination-type-btn-dark ${current === n ? 'active' : ''}"
+                        onclick="selectMaxRows(${n})">${n}</button>
+            `).join('')}
+            <button class="pagination-type-btn-dark ${isCustom ? 'active' : ''}"
+                    onclick="promptCustomMaxRows()">Custom</button>
+        </div>
+        ${isCustom ? `<div style="margin-top:6px;font-size:12px;color:var(--panel-text-muted);">Custom: ${current} rows</div>` : ''}
+    `;
+
+    // Pagination detection
     let paginationHtml = '';
     if (paginationConfig) {
         const types = ['none', 'click_next', 'load_more', 'infinite_scroll', 'url_pattern'];
         paginationHtml = `
-            <div class="pagination-type-group-dark">
+            <div class="pagination-type-group-dark" style="margin-top:8px;">
                 ${types.map(t => `
                     <button class="pagination-type-btn-dark ${t === paginationConfig.type ? 'active' : ''}"
                             onclick="selectPaginationType('${t}')">${formatPaginationType(t)}</button>
@@ -394,15 +741,16 @@ function renderPaginationSection() {
             </div>
             <div id="paginationFields"></div>
         `;
-        // Render fields after innerHTML
         setTimeout(() => renderPaginationFields(), 0);
     }
 
     return `
-        <div class="step-title">Step 3: Pagination</div>
+        ${maxRowsHtml}
+
+        <div class="step-title" style="margin-top:16px;">Step 4: Pagination</div>
         <button class="guide-btn" onclick="detectPagination()" style="padding:10px 14px;font-size:13px;margin-bottom:8px;">
             <span class="guide-btn-icon">📄</span>
-            <span class="guide-btn-text">Auto Detect</span>
+            <span class="guide-btn-text">Select Pagination Setting</span>
             <span class="guide-btn-arrow">›</span>
         </button>
         ${paginationHtml}
@@ -560,6 +908,26 @@ function selectPaginationType(type) {
     renderGuidePanel();
 }
 
+function selectMaxRows(n) {
+    maxRowsSetting = n;
+    if (!paginationConfig) {
+        paginationConfig = { type: 'none', max_pages: 1, wait_ms: 1000 };
+    }
+    paginationConfig.max_rows = n;
+    renderGuidePanel();
+}
+
+function promptCustomMaxRows() {
+    const val = prompt('Enter max number of rows:', maxRowsSetting || 500);
+    if (val === null) return;
+    const num = parseInt(val, 10);
+    if (!num || num < 1) {
+        showToast('Please enter a valid number', 'warning');
+        return;
+    }
+    selectMaxRows(num);
+}
+
 function formatPaginationType(type) {
     const map = {
         'none': 'None',
@@ -651,6 +1019,130 @@ function updateDockPreview(data, fields) {
     container.innerHTML = html;
 }
 
+// ---------- Recording ----------
+
+function recordStep(type, details) {
+    recordedSteps.push({
+        type,
+        timestamp: new Date().toISOString(),
+        details
+    });
+}
+
+function renderRecordedSteps() {
+    const container = $('recordedSteps');
+    if (!container) return;
+
+    if (!recordedSteps.length) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const icons = {
+        navigation: '\u25b6',       // ▶
+        interaction: '\u2197',      // ↗
+        captured_list: '\u2261',    // ≡
+        captured_text: 'T',
+        captured_screenshot: '\ud83d\udcf7'
+    };
+
+    const html = recordedSteps.map((step, i) => {
+        const icon = icons[step.type] || '?';
+        const desc = formatStepDescription(step);
+        return `<div class="recorded-step">
+            <span class="step-icon">${icon}</span>
+            <span class="step-desc">${escapeHtml(desc)}</span>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `
+        <hr class="guide-divider">
+        <div class="step-title">Recorded Steps (${recordedSteps.length})</div>
+        <div class="recorded-steps-list">${html}</div>
+    `;
+
+    // Auto-scroll to bottom
+    const list = container.querySelector('.recorded-steps-list');
+    if (list) list.scrollTop = list.scrollHeight;
+}
+
+function formatStepDescription(step) {
+    const d = step.details;
+    switch (step.type) {
+        case 'navigation':
+            return 'Navigate to ' + truncate(d.url || '', 40);
+        case 'interaction':
+            if (d.action === 'click') {
+                return d.selector
+                    ? 'Click ' + truncate(d.selector, 35)
+                    : `Click at (${d.x}, ${d.y})`;
+            }
+            if (d.action === 'scroll') return 'Scroll page';
+            if (d.action === 'input') return 'Input text';
+            return d.action || 'Interaction';
+        case 'captured_list':
+            return 'Capture list: ' + truncate(d.selector || d.name || '', 30) + (d.itemCount ? ` (${d.itemCount} items)` : '');
+        case 'captured_text':
+            return 'Capture text: ' + truncate(d.sampleValue || d.name || '', 30);
+        case 'captured_screenshot':
+            return 'Capture screenshot';
+        default:
+            return step.type;
+    }
+}
+
+function getRecordingData() {
+    return {
+        steps: JSON.parse(JSON.stringify(recordedSteps)),
+        fields: configuredFields.map(f => ({ name: f.name, selector: f.selector, attr: f.attr, itemSelector: f.itemSelector || '' })),
+        pagination: paginationConfig ? { ...paginationConfig } : null,
+        url: currentSession?.pageInfo?.url || $('urlInput')?.value || ''
+    };
+}
+
+function loadRecordingData(data) {
+    if (!data) return;
+    recordedSteps = data.steps || [];
+    if (data.fields) {
+        configuredFields = data.fields.map(f => ({
+            name: f.name,
+            selector: f.selector,
+            attr: f.attr || 'text',
+            type: 'text',
+            confidence: 0,
+            sampleValues: [],
+            itemSelector: f.itemSelector || ''
+        }));
+    }
+    if (data.pagination) {
+        paginationConfig = { ...data.pagination };
+    }
+    renderRecordedSteps();
+    renderGuidePanel();
+    updateFinishBtn();
+}
+
+function stepsToActions() {
+    // Backend Action model only accepts: click, scroll, input, wait, hover, select
+    const validTypes = ['click', 'scroll', 'input', 'wait', 'hover', 'select'];
+    return recordedSteps
+        .filter(s => s.type === 'interaction')
+        .map(s => {
+            const d = s.details;
+            if (d.action === 'click') {
+                return { type: 'click', selector: d.selector || '', x: d.x, y: d.y };
+            }
+            if (d.action === 'scroll') {
+                return { type: 'scroll', x: d.x || 0, y: d.y || 0 };
+            }
+            if (d.action === 'input') {
+                return { type: 'input', selector: d.selector || '', value: d.value || '' };
+            }
+            return { type: d.action, selector: d.selector || '' };
+        })
+        .filter(a => validTypes.includes(a.type));
+}
+
 // ---------- Save Robot ----------
 
 function saveAsRobot() {
@@ -697,6 +1189,13 @@ async function doSaveRobot() {
     const desc = $('robotDesc')?.value?.trim() || '';
 
     try {
+        // Resolve item_selector: prefer captured_list step, fallback to smartResult
+        const capturedListStep = recordedSteps.find(s => s.type === 'captured_list' && s.details.itemCount >= 2);
+        const itemSelector = capturedListStep?.details?.selector
+            || smartResult?.lists?.[0]?.item_selector
+            || '';
+
+        console.log('[DEBUG] Saving robot with fields:', JSON.stringify(configuredFields, null, 2));
         const res = await fetch(`${API_BASE}/robots`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -704,15 +1203,15 @@ async function doSaveRobot() {
                 name,
                 description: desc,
                 origin_url: currentSession.pageInfo?.url || $('urlInput').value,
-                item_selector: smartResult?.lists?.[0]?.item_selector || '',
+                item_selector: itemSelector,
                 fields: configuredFields.map(f => ({ name: f.name, selector: f.selector, attr: f.attr })),
                 pagination: paginationConfig ? {
                     type: paginationConfig.type,
-                    selector: paginationConfig.next_button_selector || '',
+                    selector: paginationConfig.next_button_selector || paginationConfig.selector || '',
                     max_pages: paginationConfig.max_pages || 5,
                     wait_ms: paginationConfig.wait_ms || 1000
                 } : null,
-                actions: []
+                actions: stepsToActions()
             })
         });
 
@@ -720,18 +1219,32 @@ async function doSaveRobot() {
 
         const robot = await res.json();
         closeModal();
+        if (canvas) canvas.setMode('navigate');
+
+        // Dispatch recordingComplete event
+        document.dispatchEvent(new CustomEvent('recordingComplete', {
+            detail: { robotId: robot.id, ...getRecordingData() }
+        }));
+
         showToast('Robot saved!', 'success');
 
+        const robotId = robot.id;
         showModal('Robot Saved', `
-            <p style="text-align:center; margin-bottom:16px;">Run the robot now?</p>
+            <p style="text-align:center; margin-bottom:16px;">What would you like to do next?</p>
         `, [
-            { text: 'Later', class: 'btn btn-secondary', onclick: 'closeModal()' },
-            { text: 'Run Now', class: 'btn btn-primary', onclick: `runRobot(${robot.id}); closeModal()` }
+            { text: 'Later', class: 'btn btn-secondary', onclick: `closeModal(); window.location.href = 'index.html'` },
+            { text: 'Set Schedule', class: 'btn btn-secondary', onclick: `closeModal(); openScheduleDialog('${robotId}')` },
+            { text: 'Run Now', class: 'btn btn-primary', onclick: `closeModal(); window.location.href = 'robot.html?id=${robotId}&autorun=true'` }
         ]);
 
     } catch (error) {
         showToast(`Save failed: ${error.message}`, 'error');
     }
+}
+
+function openScheduleDialog(robotId) {
+    // Redirect to robot page for schedule setup (not yet implemented in Studio)
+    window.location.href = `robot.html?id=${robotId}`;
 }
 
 async function runRobot(robotId) {
