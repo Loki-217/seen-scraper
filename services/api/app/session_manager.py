@@ -120,40 +120,46 @@ class BrowserSession:
 
                 // 生成唯一选择器
                 function generateSelector(el) {
-                    if (el.id) return '#' + CSS.escape(el.id);
-
-                    // 使用 data 属性
-                    for (const attr of el.attributes) {
-                        if (attr.name.startsWith('data-') && attr.value) {
-                            return `[${attr.name}="${CSS.escape(attr.value)}"]`;
-                        }
+                    // If element has a unique ID, use it directly
+                    if (el.id && document.querySelectorAll('#' + CSS.escape(el.id)).length === 1) {
+                        return '#' + CSS.escape(el.id);
                     }
 
-                    // 使用类名
+                    // Try short selector first: class-based, only if globally unique
                     if (el.className && typeof el.className === 'string') {
                         const classes = el.className.split(' ').filter(c => c && !c.includes('hover') && !c.includes('active'));
                         if (classes.length > 0) {
-                            const selector = '.' + classes.slice(0, 2).map(c => CSS.escape(c)).join('.');
-                            // 检查是否唯一
-                            if (document.querySelectorAll(selector).length <= 10) {
-                                return selector;
+                            const shortSel = el.tagName.toLowerCase() + '.' + classes.slice(0, 2).map(c => CSS.escape(c)).join('.');
+                            if (document.querySelectorAll(shortSel).length === 1) {
+                                return shortSel;
                             }
                         }
                     }
 
-                    // 使用标签 + nth-child
-                    const parent = el.parentElement;
-                    if (parent) {
-                        const siblings = Array.from(parent.children).filter(c => c.tagName === el.tagName);
-                        const index = siblings.indexOf(el) + 1;
-                        const tagSelector = el.tagName.toLowerCase();
-                        if (siblings.length === 1) {
-                            return tagSelector;
+                    // Build absolute path from element up to body
+                    const parts = [];
+                    let cur = el;
+                    while (cur && cur !== document.body && cur !== document.documentElement) {
+                        let seg = cur.tagName.toLowerCase();
+                        if (cur.id && document.querySelectorAll('#' + CSS.escape(cur.id)).length === 1) {
+                            parts.unshift('#' + CSS.escape(cur.id));
+                            break;
                         }
-                        return `${tagSelector}:nth-of-type(${index})`;
+                        if (cur.className && typeof cur.className === 'string' && cur.className.trim()) {
+                            const cls = cur.className.trim().split(/\\s+/).filter(c => c && c.length < 30).slice(0, 2);
+                            if (cls.length) seg += '.' + cls.map(c => CSS.escape(c)).join('.');
+                        }
+                        const parent = cur.parentElement;
+                        if (parent) {
+                            const sibs = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
+                            if (sibs.length > 1) {
+                                seg += ':nth-of-type(' + (sibs.indexOf(cur) + 1) + ')';
+                            }
+                        }
+                        parts.unshift(seg);
+                        cur = cur.parentElement;
                     }
-
-                    return el.tagName.toLowerCase();
+                    return parts.join(' > ');
                 }
 
                 // 获取元素类型
@@ -616,7 +622,8 @@ class BrowserSession:
                         parts.unshift(seg);
                         break;
                     }
-                    if (cur.className && typeof cur.className === 'string') {
+                    const hasClass = cur.className && typeof cur.className === 'string' && cur.className.trim();
+                    if (hasClass) {
                         const cls = cur.className.split(' ')
                             .filter(c => c && c.length < 30 && !/\\d{3,}/.test(c))
                             .slice(0, 2);
@@ -624,8 +631,22 @@ class BrowserSession:
                     }
                     const parent = cur.parentElement;
                     if (parent && parent !== root) {
-                        const sibs = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
-                        if (sibs.length > 1) seg += ':nth-of-type(' + (sibs.indexOf(cur) + 1) + ')';
+                        if (hasClass) {
+                            // With class: only add nth-of-type if siblings share same tag AND same first class
+                            const firstClass = cur.className.trim().split(/\\s+/)[0];
+                            const sameSelSibs = Array.from(parent.children).filter(c =>
+                                c.tagName === cur.tagName &&
+                                c.className && typeof c.className === 'string' &&
+                                c.className.trim().split(/\\s+/)[0] === firstClass
+                            );
+                            if (sameSelSibs.length > 1) {
+                                seg += ':nth-of-type(' + (Array.from(parent.children).filter(c => c.tagName === cur.tagName).indexOf(cur) + 1) + ')';
+                            }
+                        } else {
+                            // No class: add nth-of-type if multiple same-tag siblings
+                            const sibs = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
+                            if (sibs.length > 1) seg += ':nth-of-type(' + (sibs.indexOf(cur) + 1) + ')';
+                        }
                     }
                     parts.unshift(seg);
                     cur = cur.parentElement;

@@ -185,7 +185,9 @@ def create_robot(req: CreateRobotRequest):
             fields_json=json.dumps(req.fields, ensure_ascii=False) if req.fields else None,
             pagination_json=json.dumps(req.pagination, ensure_ascii=False) if req.pagination else None,
         )
-        print(f"[DEBUG] Creating robot, fields_json: {req.fields}")
+        print(f"[DEBUG] create_robot item_selector: {req.item_selector}")
+        print(f"[DEBUG] create_robot fields: {req.fields}")
+        print(f"[DEBUG] create_robot pagination: {req.pagination}")
         s.add(robot_db)
         s.commit()
         s.refresh(robot_db)

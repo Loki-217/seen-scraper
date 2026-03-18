@@ -45,6 +45,11 @@ class RobotExecutor:
     async def execute(self) -> ExecutionResult:
         """执行 Robot，返回结果"""
         self.start_time = time.time()
+        self._max_rows = self.robot.pagination.max_rows if self.robot.pagination else None
+        print(f"[DEBUG] robot.id: {self.robot.id}")
+        print(f"[DEBUG] parsed pagination: {self.robot.pagination}")
+        print(f"[DEBUG] max_rows: {self._max_rows}")
+        print(f"[DEBUG] max_pages: {self.robot.pagination.max_pages if self.robot.pagination else 'no pagination'}")
 
         try:
             await self._init_browser()
@@ -52,8 +57,14 @@ class RobotExecutor:
             await self._replay_actions()
             await self._extract_data()
 
-            if self.robot.pagination:
+            if self.robot.pagination and not self._reached_max_rows():
                 await self._handle_pagination()
+
+            # 最终截断到 max_rows
+            print(f"[DEBUG] Before truncate: {len(self.results)} items, max_rows={self._max_rows}")
+            if self._max_rows and len(self.results) > self._max_rows:
+                self.results = self.results[:self._max_rows]
+            print(f"[DEBUG] After truncate: {len(self.results)} items")
 
             return self._build_result(success=True)
 
@@ -95,6 +106,7 @@ class RobotExecutor:
         """)
 
         self.page = await self.context.new_page()
+        self.page.on('console', lambda msg: print(f'[Browser] {msg.text}') if 'DIAG' in msg.text else None)
         self.page.set_default_timeout(self.PAGE_LOAD_TIMEOUT)
 
     async def _navigate_to_origin(self):
@@ -156,8 +168,16 @@ class RobotExecutor:
 
     async def _extract_page_data(self) -> List[Dict[str, Any]]:
         """提取当前页面的数据"""
-        if not self.robot.item_selector or not self.robot.fields:
+        print(f"[DEBUG] item_selector: '{self.robot.item_selector}'")
+        print(f"[DEBUG] fields count: {len(self.robot.fields) if self.robot.fields else 0}")
+        if not self.robot.fields:
+            print(f"[DEBUG] Early return: no fields")
             return []
+
+        # Text-only mode: no item_selector, extract fields directly from the page
+        if not self.robot.item_selector:
+            print(f"[DEBUG] Text-only mode: extracting fields directly from page")
+            return await self._extract_text_fields()
 
         print(f"[DEBUG] Extracting with fields: {[(f.name, f.selector) for f in self.robot.fields]}")
         # 构建提取脚本
@@ -176,11 +196,17 @@ class RobotExecutor:
                 const items = document.querySelectorAll(itemSelector);
                 const results = [];
 
-                for (const item of items) {
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
                     const row = {};
 
                     for (const field of fields) {
-                        const el = item.querySelector(field.selector);
+                        let el = item.querySelector(field.selector);
+                        if (!el && field.selector.includes(':nth-of-type')) {
+                            // Fallback: strip last nth-of-type and retry
+                            const fallback = field.selector.replace(/:nth-of-type\(\d+\)(?!.*:nth-of-type)/, '');
+                            el = item.querySelector(fallback);
+                        }
                         if (el) {
                             let value = '';
                             if (field.attr === 'text') {
@@ -204,6 +230,22 @@ class RobotExecutor:
                             row[field.name] = value;
                         } else {
                             row[field.name] = null;
+
+                            // Diagnostic for first 3 items
+                            if (i < 3) {
+                                const parts = field.selector.split(' > ');
+                                let current = item;
+                                for (let j = 0; j < parts.length; j++) {
+                                    const partial = parts.slice(0, j + 1).join(' > ');
+                                    const test = item.querySelector(partial);
+                                    if (!test) {
+                                        console.log('[DIAG] Item ' + i + ', field "' + field.name + '": selector failed at step ' + (j+1) + ' "' + parts[j] + '" (partial: "' + partial + '")');
+                                        console.log('[DIAG]   Parent HTML: ' + (current ? current.innerHTML.substring(0, 200) : 'null'));
+                                        break;
+                                    }
+                                    current = test;
+                                }
+                            }
                         }
                     }
 
@@ -216,6 +258,55 @@ class RobotExecutor:
 
         return data
 
+    async def _extract_text_fields(self) -> List[Dict[str, Any]]:
+        """Text-only mode: extract each field directly from the page using document.querySelector"""
+        fields_config = [
+            {
+                'name': f.name,
+                'selector': f.selector,
+                'attr': f.attr,
+                'regex': f.regex
+            }
+            for f in self.robot.fields
+        ]
+
+        data = await self.page.evaluate('''
+            (fields) => {
+                const row = {};
+                for (const field of fields) {
+                    const el = document.querySelector(field.selector);
+                    if (el) {
+                        let value = '';
+                        if (field.attr === 'text') {
+                            value = (el.textContent || '').trim();
+                        } else if (field.attr === 'href') {
+                            value = el.href || '';
+                        } else if (field.attr === 'src') {
+                            value = el.src || el.dataset.src || '';
+                        } else {
+                            value = el.getAttribute(field.attr) || '';
+                        }
+                        if (field.regex && value) {
+                            try {
+                                const match = value.match(new RegExp(field.regex));
+                                value = match ? (match[1] || match[0]) : value;
+                            } catch(e) {}
+                        }
+                        row[field.name] = value;
+                    } else {
+                        row[field.name] = null;
+                    }
+                }
+                return [row];
+            }
+        ''', fields_config)
+
+        return data
+
+    def _reached_max_rows(self) -> bool:
+        """检查是否已达到 max_rows 限制"""
+        return bool(self._max_rows and len(self.results) >= self._max_rows)
+
     async def _handle_pagination(self):
         """处理翻页"""
         if not self.robot.pagination:
@@ -224,8 +315,19 @@ class RobotExecutor:
         pagination = self.robot.pagination
         max_pages = pagination.max_pages or 10
 
+        # 如果设置了 max_rows，根据第一页数据量估算需要的页数
+        if self._max_rows and self.results:
+            import math
+            items_per_page = len(self.results)  # 第一页的数据量
+            needed_pages = math.ceil(self._max_rows / items_per_page) if items_per_page > 0 else 1
+            max_pages = min(needed_pages, max_pages)
+
         for page_num in range(2, max_pages + 1):
             self._check_timeout()
+
+            # 检查是否已达到行数限制
+            if self._reached_max_rows():
+                break
 
             # 执行翻页
             success = await self._do_pagination(pagination)
@@ -251,6 +353,7 @@ class RobotExecutor:
 
             self.results.extend(page_data)
             self.pages_scraped += 1
+            print(f"[DEBUG] Page {page_num}: got {len(page_data)} items, total so far: {len(self.results)}")
 
             # 随机延迟
             await self._random_delay(500, 1500)

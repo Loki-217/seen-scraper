@@ -105,6 +105,7 @@ class PaginationConfig(BaseModel):
     type: str = Field(..., description="翻页类型: click_next | scroll | url_pattern")
     selector: Optional[str] = Field(None, description="翻页按钮选择器")
     max_pages: int = Field(10, description="最大页数")
+    max_rows: Optional[int] = Field(None, description="最大数据行数，None 表示不限制")
     wait_ms: int = Field(1000, description="翻页后等待时间")
     stop_selector: Optional[str] = Field(None, description="停止条件选择器")
 

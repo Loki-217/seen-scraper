@@ -62,23 +62,21 @@ async function startSession() {
         container.addEventListener('elementSelect', (e) => {
             const count = e.detail.selected?.length || 0;
             $('selectionCount').textContent = count;
-            // In manual mode, auto-add selected element as field
-            if (guideState === 'manualSelect' && e.detail.element) {
-                const el = e.detail.element;
-                const existing = configuredFields.findIndex(f => f.selector === el.selector);
-                if (existing >= 0) {
-                    configuredFields.splice(existing, 1);
-                } else {
+            // In manual mode, rebuild configuredFields from browser-canvas selection via addField
+            if (guideState === 'manualSelect' && e.detail.selected) {
+                configuredFields = [];
+                e.detail.selected.forEach((el, i) => {
                     addField({
-                        name: el.text?.substring(0, 20) || el.tag,
+                        name: `text_${i + 1}`,
                         selector: el.selector,
                         attr: el.href ? 'href' : (el.src ? 'src' : 'text'),
                         type: el.element_type || 'text',
+                        captureType: 'text',
                         confidence: 0,
                         sampleValues: el.text ? [el.text] : [],
                         itemSelector: ''
                     });
-                }
+                });
                 renderGuidePanel();
                 updateFinishBtn();
             }
@@ -141,12 +139,28 @@ async function startSession() {
 
         container.addEventListener('textCaptured', (e) => {
             const el = e.detail.element;
+            // Generate sequential field name
+            const textStepCount = recordedSteps.filter(s => s.type === 'captured_text').length + 1;
+            const fieldName = `text_${textStepCount}`;
             recordStep('captured_text', {
-                name: el.text?.substring(0, 20) || el.tag,
+                name: fieldName,
                 selector: el.selector,
-                sampleValue: el.text || ''
+                sampleValue: el.text || '',
+                tag: el.tag
+            });
+            // Auto-add to configuredFields for text capture mode
+            addField({
+                name: fieldName,
+                selector: el.selector,
+                attr: 'text',
+                type: 'text',
+                captureType: 'text',
+                confidence: 1,
+                sampleValues: [el.text || '']
             });
             renderRecordedSteps();
+            renderGuidePanel();
+            updateFinishBtn();
             showToast(`Element captured: ${el.tag} "${(el.text || '').substring(0, 30)}"`, 'success');
         });
 
@@ -850,8 +864,18 @@ function addAllFields(listIdx) {
 }
 
 function addField(field) {
+    console.log('[DEBUG] addField called, name:', field.name, 'selector:', field.selector?.substring(0, 40));
     if (configuredFields.some(f => f.selector === field.selector && f.attr === field.attr)) return;
-    configuredFields.push(field);
+    // Deduplicate name: append _2, _3... if name already exists
+    let name = field.name;
+    const nameExists = configuredFields.some(f => f.name === name);
+    console.log('[DEBUG] addField dedup check, name:', name, 'exists:', nameExists);
+    if (nameExists) {
+        let suffix = 2;
+        while (configuredFields.some(f => f.name === `${name}_${suffix}`)) suffix++;
+        name = `${name}_${suffix}`;
+    }
+    configuredFields.push({ ...field, name });
 }
 
 function removeField(index) {
@@ -879,6 +903,7 @@ async function detectPagination() {
         });
         const data = await res.json();
 
+        const _prevMaxRows = paginationConfig?.max_rows ?? maxRowsSetting;
         if (data.success && data.detected?.length) {
             const rec = data.recommended || data.detected[0]?.config || {};
             paginationConfig = {
@@ -886,11 +911,12 @@ async function detectPagination() {
                 next_button_selector: rec.next_button_selector || rec.selector || '',
                 max_pages: rec.max_pages || 5,
                 wait_ms: rec.wait_ms || 1000,
+                max_rows: _prevMaxRows,
                 ...rec
             };
             showToast(`Detected ${data.detected.length} pagination method(s)`, 'success');
         } else {
-            paginationConfig = { type: 'none', max_pages: 5, wait_ms: 1000 };
+            paginationConfig = { type: 'none', max_pages: 5, wait_ms: 1000, max_rows: _prevMaxRows };
             showToast('No pagination detected', 'warning');
         }
         renderGuidePanel();
@@ -900,10 +926,11 @@ async function detectPagination() {
 }
 
 function selectPaginationType(type) {
+    const _prevMaxRows = paginationConfig?.max_rows ?? maxRowsSetting;
     if (type === 'none') {
         paginationConfig = null;
     } else {
-        paginationConfig = { type, max_pages: paginationConfig?.max_pages || 5, wait_ms: paginationConfig?.wait_ms || 1000 };
+        paginationConfig = { type, max_pages: paginationConfig?.max_pages || 5, wait_ms: paginationConfig?.wait_ms || 1000, max_rows: _prevMaxRows };
     }
     renderGuidePanel();
 }
@@ -1195,7 +1222,18 @@ async function doSaveRobot() {
             || smartResult?.lists?.[0]?.item_selector
             || '';
 
+        const _paginationPayload = paginationConfig ? {
+            type: paginationConfig.type,
+            selector: paginationConfig.next_button_selector || paginationConfig.selector || '',
+            max_pages: paginationConfig.max_pages || 5,
+            wait_ms: paginationConfig.wait_ms || 1000,
+            max_rows: paginationConfig.max_rows || null
+        } : null;
+        console.log('[DEBUG] paginationConfig.max_rows:', paginationConfig?.max_rows, 'maxRowsSetting:', maxRowsSetting);
+        console.log('[DEBUG] saving pagination:', JSON.stringify(_paginationPayload));
         console.log('[DEBUG] Saving robot with fields:', JSON.stringify(configuredFields, null, 2));
+        console.log('[DEBUG] final configuredFields:', JSON.stringify(configuredFields.map(f => ({name: f.name, selector: f.selector?.substring(0, 30)}))));
+        console.log('[DEBUG] saveAsRobot item_selector:', JSON.stringify(itemSelector));
         const res = await fetch(`${API_BASE}/robots`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1209,7 +1247,8 @@ async function doSaveRobot() {
                     type: paginationConfig.type,
                     selector: paginationConfig.next_button_selector || paginationConfig.selector || '',
                     max_pages: paginationConfig.max_pages || 5,
-                    wait_ms: paginationConfig.wait_ms || 1000
+                    wait_ms: paginationConfig.wait_ms || 1000,
+                    max_rows: paginationConfig.max_rows || null
                 } : null,
                 actions: stepsToActions()
             })
@@ -1427,3 +1466,4 @@ document.addEventListener('DOMContentLoaded', () => {
 if (document.readyState !== 'loading') {
     renderGuidePanel();
 }
+// BUILD: 20260319-0240

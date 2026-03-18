@@ -282,7 +282,10 @@ class BrowserCanvas {
         if (this.interactionMode === 'capture_text') {
             // Click adds/removes element to selectedElements
             if (element) {
-                const index = this.selectedElements.findIndex(el => el.selector === element.selector);
+                const index = this.selectedElements.findIndex(el =>
+                    el.selector === element.selector &&
+                    el.rect.x === element.rect.x && el.rect.y === element.rect.y
+                );
                 if (index >= 0) {
                     this.selectedElements.splice(index, 1);
                 } else {
@@ -322,9 +325,15 @@ class BrowserCanvas {
 
     _syncSelectedElements() {
         if (!this.selectedElements.length) return;
-        const bySelector = new Map(this.elements.map(el => [el.selector, el]));
         this.selectedElements = this.selectedElements
-            .map(sel => bySelector.get(sel.selector) || null)
+            .map(sel => {
+                const match = this.elements.find(el =>
+                    el.selector === sel.selector &&
+                    Math.abs(el.rect.x - sel.rect.x) < 5 &&
+                    Math.abs(el.rect.y - sel.rect.y) < 5
+                );
+                return match || null;
+            })
             .filter(Boolean);
     }
 
