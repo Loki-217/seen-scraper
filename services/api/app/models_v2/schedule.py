@@ -98,6 +98,7 @@ class FieldConfig(BaseModel):
     attr: str = Field("text", description="提取属性: text | href | src | ...")
     required: bool = Field(False, description="是否必需")
     regex: Optional[str] = Field(None, description="正则提取")
+    captureType: str = Field("list", description="字段来源: list | text")
 
 
 class PaginationConfig(BaseModel):

@@ -351,6 +351,18 @@ body {
     font-family: var(--font-sans);
 }
 .btn-discard:hover { color: var(--panel-text); }
+.btn-capture-more {
+    background: none;
+    border: 1px solid var(--panel-border);
+    color: var(--panel-text-muted);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--font-sans);
+    transition: all 0.15s;
+}
+.btn-capture-more:hover { color: var(--panel-text); border-color: var(--panel-text-muted); }
 .btn-finish {
     background: var(--primary);
     color: white;

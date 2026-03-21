@@ -64,7 +64,8 @@ async function startSession() {
             $('selectionCount').textContent = count;
             // In manual mode, rebuild configuredFields from browser-canvas selection via addField
             if (guideState === 'manualSelect' && e.detail.selected) {
-                configuredFields = [];
+                // Keep non-text fields (e.g. list fields from previous capture), only rebuild text fields
+                configuredFields = configuredFields.filter(f => f.captureType !== 'text');
                 e.detail.selected.forEach((el, i) => {
                     addField({
                         name: `text_${i + 1}`,
@@ -309,6 +310,12 @@ function renderGuidePanel() {
         case 'configuring':  renderConfiguringGuide(panel); break;
         default:             renderInitialGuide(panel); break;
     }
+
+    // Update footer buttons visibility
+    updateFinishBtn();
+    console.log('[DEBUG] renderGuidePanel done, guideState:', guideState, 'fields:', configuredFields.length,
+        'captureMoreBtn:', document.getElementById('captureMoreBtn') ? 'FOUND' : 'NOT_IN_DOM',
+        'finishBtn:', document.getElementById('finishBtn') ? 'FOUND' : 'NOT_IN_DOM');
 
     // Append recorded steps below guide content
     renderRecordedSteps();
@@ -888,6 +895,10 @@ function updateField(index, changes) {
 
 function updateFinishBtn() {
     $('finishBtn').disabled = configuredFields.length === 0;
+    const moreBtn = $('captureMoreBtn');
+    if (moreBtn) {
+        moreBtn.style.display = configuredFields.length >= 1 ? '' : 'none';
+    }
 }
 
 // ---------- Pagination ----------
@@ -1242,7 +1253,7 @@ async function doSaveRobot() {
                 description: desc,
                 origin_url: currentSession.pageInfo?.url || $('urlInput').value,
                 item_selector: itemSelector,
-                fields: configuredFields.map(f => ({ name: f.name, selector: f.selector, attr: f.attr })),
+                fields: configuredFields.map(f => ({ name: f.name, selector: f.selector, attr: f.attr, captureType: f.captureType || 'list' })),
                 pagination: paginationConfig ? {
                     type: paginationConfig.type,
                     selector: paginationConfig.next_button_selector || paginationConfig.selector || '',
@@ -1466,4 +1477,4 @@ document.addEventListener('DOMContentLoaded', () => {
 if (document.readyState !== 'loading') {
     renderGuidePanel();
 }
-// BUILD: 20260319-0240
+// BUILD: 20260321-2010

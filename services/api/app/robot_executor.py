@@ -174,13 +174,29 @@ class RobotExecutor:
             print(f"[DEBUG] Early return: no fields")
             return []
 
-        # Text-only mode: no item_selector, extract fields directly from the page
-        if not self.robot.item_selector:
-            print(f"[DEBUG] Text-only mode: extracting fields directly from page")
-            return await self._extract_text_fields()
+        # Split fields by captureType
+        list_fields = [f for f in self.robot.fields if getattr(f, 'captureType', 'list') == 'list']
+        text_fields = [f for f in self.robot.fields if getattr(f, 'captureType', 'list') == 'text']
+        print(f"[DEBUG] list_fields: {len(list_fields)}, text_fields: {len(text_fields)}")
 
-        print(f"[DEBUG] Extracting with fields: {[(f.name, f.selector) for f in self.robot.fields]}")
-        # 构建提取脚本
+        # Text-only mode: no list fields or no item_selector
+        if not list_fields or not self.robot.item_selector:
+            if text_fields:
+                print(f"[DEBUG] Text-only mode: extracting fields directly from page")
+                return await self._extract_text_fields(text_fields)
+            print(f"[DEBUG] Early return: no usable fields")
+            return []
+
+        # Extract text fields first (page-level, single values)
+        text_data = {}
+        if text_fields:
+            text_rows = await self._extract_text_fields(text_fields)
+            if text_rows:
+                text_data = text_rows[0]
+            print(f"[DEBUG] Text fields extracted: {list(text_data.keys())}")
+
+        print(f"[DEBUG] Extracting list fields: {[(f.name, f.selector) for f in list_fields]}")
+        # 构建提取脚本 (only list fields)
         fields_config = [
             {
                 'name': f.name,
@@ -188,7 +204,7 @@ class RobotExecutor:
                 'attr': f.attr,
                 'regex': f.regex
             }
-            for f in self.robot.fields
+            for f in list_fields
         ]
 
         data = await self.page.evaluate('''
@@ -256,10 +272,16 @@ class RobotExecutor:
             }
         ''', {'itemSelector': self.robot.item_selector, 'fields': fields_config})
 
+        # Merge text fields into each list row
+        if text_data:
+            for row in data:
+                row.update(text_data)
+
         return data
 
-    async def _extract_text_fields(self) -> List[Dict[str, Any]]:
+    async def _extract_text_fields(self, fields: List = None) -> List[Dict[str, Any]]:
         """Text-only mode: extract each field directly from the page using document.querySelector"""
+        source_fields = fields if fields is not None else self.robot.fields
         fields_config = [
             {
                 'name': f.name,
@@ -267,7 +289,7 @@ class RobotExecutor:
                 'attr': f.attr,
                 'regex': f.regex
             }
-            for f in self.robot.fields
+            for f in source_fields
         ]
 
         data = await self.page.evaluate('''
