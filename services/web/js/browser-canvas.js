@@ -237,7 +237,7 @@ class BrowserCanvas {
             this._renderOverlay();
         }
 
-        if (element) {
+        if (element && !window.__textPopupOpen) {
             this.tooltip.innerHTML = `
                 <div><strong>${escapeHtml(element.tag)}</strong> ${escapeHtml(element.element_type)}</div>
                 <div style="color: #aaa; font-size: 11px;">${escapeHtml(element.selector)}</div>
@@ -300,6 +300,17 @@ class BrowserCanvas {
                     detail: { element, selected: this.selectedElements }
                 }));
             }
+        }
+    }
+
+    deselectElement(element) {
+        const index = this.selectedElements.findIndex(el =>
+            el.selector === element.selector &&
+            el.rect.x === element.rect.x && el.rect.y === element.rect.y
+        );
+        if (index >= 0) {
+            this.selectedElements.splice(index, 1);
+            this._renderOverlay();
         }
     }
 

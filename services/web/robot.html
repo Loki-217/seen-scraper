@@ -11,89 +11,252 @@
   <header class="topbar">
     <div class="topbar-inner">
       <a class="topbar-brand" href="index.html">
-        <span class="brand-icon">👁️</span>
+        <span class="brand-icon">&#x1F441;&#xFE0F;</span>
         <span class="brand-text">SeenFetch</span>
       </a>
       <div class="topbar-robot-name" id="topbarRobotName"></div>
     </div>
   </header>
 
-  <nav class="tab-bar">
-    <div class="tab-bar-inner">
-      <div class="tab active">Quick Setup</div>
-      <div class="tab" style="color:#d1d5db;cursor:default;pointer-events:none;">Monitor <span style="font-size:10px;background:#374151;color:#9ca3af;padding:1px 6px;border-radius:8px;margin-left:4px;">Coming soon</span></div>
-    </div>
-  </nav>
-
   <main class="content">
-    <div class="content-inner">
-      <div class="content-body">
-        <!-- Robot Name -->
-        <section class="section">
-          <label class="field-label">Robot name</label>
-          <input type="text" class="name-input" id="robotNameInput" />
-        </section>
+    <!-- ===== Tab 导航栏 ===== -->
+    <div class="robot-tabs">
+      <button class="robot-tab active" data-tab="setup">Quick Setup</button>
+      <button class="robot-tab" data-tab="monitor">Monitor</button>
+      <button class="robot-tab" data-tab="history">History</button>
+    </div>
 
-        <!-- Review the result -->
-        <section class="section" id="reviewSection">
-          <h2 class="section-title">Review the result</h2>
-          <p class="section-desc" id="reviewDesc"></p>
+    <!-- ==================== Quick Setup Tab ==================== -->
+    <div class="tab-content active" id="tab-setup">
+      <div class="content-inner">
+        <div class="content-body">
+          <!-- Robot Name -->
+          <section class="section">
+            <label class="field-label">Robot name</label>
+            <input type="text" class="name-input" id="robotNameInput" />
+          </section>
 
-          <!-- Run info card -->
-          <div class="run-info-card" id="runInfoCard" style="display:none">
-            <div class="run-info-left">
-              <div class="run-info-status" id="runInfoStatus"></div>
-              <div class="run-info-url" id="runInfoUrl"></div>
+          <!-- Review the result -->
+          <section class="section" id="reviewSection">
+            <h2 class="section-title">Review the result</h2>
+            <p class="section-desc" id="reviewDesc"></p>
+
+            <!-- Run info card -->
+            <div class="run-info-card" id="runInfoCard" style="display:none">
+              <div class="run-info-left">
+                <div class="run-info-status" id="runInfoStatus"></div>
+                <div class="run-info-url" id="runInfoUrl"></div>
+              </div>
+              <div class="run-info-right">
+                <div class="run-info-time" id="runInfoTime"></div>
+                <div class="run-info-stats" id="runInfoStats"></div>
+              </div>
             </div>
-            <div class="run-info-right">
-              <div class="run-info-time" id="runInfoTime"></div>
-              <div class="run-info-stats" id="runInfoStats"></div>
+
+            <!-- Data table area -->
+            <div id="dataArea" style="display:none">
+              <div class="data-header">
+                <div class="data-header-left">
+                  <span class="data-title" id="dataTitle"></span>
+                  <span class="data-count" id="dataCount"></span>
+                </div>
+                <div class="download-group">
+                  <button class="btn-download" id="btnDownloadCSV">&#x1F4E5; CSV</button>
+                  <button class="btn-download" id="btnDownloadJSON">&#x1F4E5; JSON</button>
+                </div>
+              </div>
+              <div class="table-wrapper">
+                <table class="data-table" id="dataTable">
+                  <thead id="dataTableHead"></thead>
+                  <tbody id="dataTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Empty / no-data state -->
+            <div class="empty-state" id="emptyState" style="display:none"></div>
+          </section>
+
+          <!-- Action buttons -->
+          <div class="actions">
+            <button class="btn-run" id="btnRun">&#x25B6; Run Task</button>
+            <button class="btn-delete" id="btnDelete">&#x1F5D1; Delete Robot</button>
+          </div>
+        </div>
+
+        <!-- Steps card (floating right) -->
+        <aside class="steps-card">
+          <p class="steps-intro">Set up your new robot in 2 quick steps:</p>
+          <div class="step done">
+            <span class="step-icon">&#x2705;</span>
+            <span>Name the robot</span>
+          </div>
+          <div class="step current">
+            <span class="step-dot"></span>
+            <span>Review its result</span>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ==================== Monitor Tab ==================== -->
+    <div class="tab-content" id="tab-monitor" style="display:none">
+      <div class="monitor-header">
+        <h2 class="section-title">Monitors List</h2>
+        <button class="btn-primary" id="btnCreateMonitor">+ Create New Monitor</button>
+      </div>
+
+      <!-- Create/Edit Form (hidden by default) -->
+      <div class="monitor-form-wrapper" id="monitorFormWrapper" style="display:none">
+        <div class="monitor-form-card">
+          <h3 class="form-title" id="monitorFormTitle">Add new monitor</h3>
+
+          <!-- Monitor Name -->
+          <div class="form-row">
+            <label class="form-label">Monitor name</label>
+            <input type="text" class="form-input" id="monitorNameInput" value="Default monitor" />
+          </div>
+
+          <!-- Origin URL (read-only) -->
+          <div class="form-row">
+            <label class="form-label">Origin URL</label>
+            <input type="text" class="form-input form-input-readonly" id="monitorOriginUrl" readonly />
+          </div>
+
+          <!-- Frequency row -->
+          <div class="form-row">
+            <label class="form-label">Run once every</label>
+            <div class="freq-row">
+              <input type="number" class="form-input form-input-small" id="freqInterval" value="1" min="1" max="99" />
+              <select class="form-select" id="freqUnit">
+                <option value="15min">15 Minutes</option>
+                <option value="hourly">Hour</option>
+                <option value="daily" selected>Day</option>
+                <option value="weekly">Week</option>
+                <option value="monthly">Month</option>
+              </select>
             </div>
           </div>
 
-          <!-- Data table area -->
-          <div id="dataArea" style="display:none">
-            <div class="data-header">
-              <div class="data-header-left">
-                <span class="data-title" id="dataTitle"></span>
-                <span class="data-count" id="dataCount"></span>
-              </div>
-              <div class="download-group">
-                <button class="btn-download" id="btnDownloadCSV">📥 CSV</button>
-                <button class="btn-download" id="btnDownloadJSON">📥 JSON</button>
+          <!-- Dynamic fields container -->
+          <div id="dynFields">
+            <!-- Weekday selector (for 15min / hourly / daily) -->
+            <div class="form-row" id="weekdayRow" style="display:none">
+              <label class="form-label">On</label>
+              <div class="weekday-group">
+                <button type="button" class="weekday-btn selected" data-day="1">Monday</button>
+                <button type="button" class="weekday-btn selected" data-day="2">Tuesday</button>
+                <button type="button" class="weekday-btn selected" data-day="3">Wednesday</button>
+                <button type="button" class="weekday-btn selected" data-day="4">Thursday</button>
+                <button type="button" class="weekday-btn selected" data-day="5">Friday</button>
+                <button type="button" class="weekday-btn" data-day="6">Saturday</button>
+                <button type="button" class="weekday-btn" data-day="0">Sunday</button>
+                <a href="#" class="select-all-link" id="weekdayToggleAll">Select All</a>
               </div>
             </div>
-            <div class="table-wrapper">
-              <table class="data-table" id="dataTable">
-                <thead id="dataTableHead"></thead>
-                <tbody id="dataTableBody"></tbody>
-              </table>
+
+            <!-- Between time range (for 15min / hourly) -->
+            <div class="form-row" id="betweenRow" style="display:none">
+              <label class="form-label">Between</label>
+              <div class="between-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="chkAnytimeBetween" checked /> Anytime
+                </label>
+                <input type="time" class="form-input form-input-time" id="betweenStart" disabled />
+                <span class="between-and">And</span>
+                <input type="time" class="form-input form-input-time" id="betweenEnd" disabled />
+              </div>
+            </div>
+
+            <!-- At around (for daily) -->
+            <div class="form-row" id="atAroundRow" style="display:none">
+              <label class="form-label">At around</label>
+              <div class="at-around-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="chkAnytimeAt" checked /> Anytime
+                </label>
+                <input type="time" class="form-input form-input-time" id="atAroundTime" disabled />
+              </div>
+            </div>
+
+            <!-- Start from (for weekly / monthly) -->
+            <div class="form-row" id="startFromRow" style="display:none">
+              <label class="form-label">Start from</label>
+              <select class="form-select form-select-wide" id="startFromSelect"></select>
+            </div>
+
+            <!-- Fixed time (for weekly / monthly) — always shown when startFromRow is shown -->
+            <div class="form-row" id="fixedTimeRow" style="display:none">
+              <label class="form-label">At around</label>
+              <input type="time" class="form-input form-input-time" id="fixedTime" value="10:00" />
+            </div>
+
+            <!-- Timezone (always shown) -->
+            <div class="form-row" id="timezoneRow">
+              <label class="form-label">Timezone</label>
+              <select class="form-select form-select-wide" id="timezoneSelect"></select>
             </div>
           </div>
 
-          <!-- Empty / no-data state -->
-          <div class="empty-state" id="emptyState" style="display:none"></div>
-        </section>
+          <!-- Notify checkbox (disabled) -->
+          <div class="form-row">
+            <label class="checkbox-label checkbox-disabled">
+              <input type="checkbox" disabled />
+              Notify me by email if there is a change in a captured text
+              <span class="coming-soon-badge">Coming soon</span>
+            </label>
+          </div>
 
-        <!-- Action buttons -->
-        <div class="actions">
-          <button class="btn-run" id="btnRun">▶ Run Task</button>
-          <button class="btn-delete" id="btnDelete">🗑 Delete Robot</button>
+          <!-- Form buttons -->
+          <div class="form-actions">
+            <button class="btn-cancel" id="btnCancelMonitor">Cancel</button>
+            <button class="btn-primary" id="btnSaveMonitor">Save</button>
+          </div>
         </div>
       </div>
 
-      <!-- Steps card (floating right) -->
-      <aside class="steps-card">
-        <p class="steps-intro">Set up your new robot in 2 quick steps:</p>
-        <div class="step done">
-          <span class="step-icon">✅</span>
-          <span>Name the robot</span>
-        </div>
-        <div class="step current">
-          <span class="step-dot"></span>
-          <span>Review its result</span>
-        </div>
-      </aside>
+      <!-- Empty state -->
+      <div class="monitor-empty" id="monitorEmptyState">
+        No monitors configured. Add a monitor to automatically run this robot on a schedule.
+      </div>
+
+      <!-- Monitor list -->
+      <div class="monitor-list" id="monitorList" style="display:none"></div>
+    </div>
+
+    <!-- ==================== History Tab ==================== -->
+    <div class="tab-content" id="tab-history" style="display:none">
+      <div class="history-header">
+        <h2 class="section-title">Execution History</h2>
+      </div>
+
+      <!-- Empty state -->
+      <div class="history-empty" id="historyEmptyState" style="display:none">
+        No execution history yet. Run the task or set up a monitor to see results here.
+      </div>
+
+      <!-- History note -->
+      <p class="history-note" id="historyNote" style="display:none">
+        Showing scheduled execution history. Manual runs are displayed in Quick Setup tab.
+      </p>
+
+      <!-- History table -->
+      <div class="table-wrapper" id="historyTableWrapper" style="display:none">
+        <table class="data-table history-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Trigger</th>
+              <th>Started</th>
+              <th>Duration</th>
+              <th>Pages</th>
+              <th>Items</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </main>
 

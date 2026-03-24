@@ -161,8 +161,18 @@ class Scheduler:
             # 转换为 Robot 模型
             robot = self._db_to_robot(robot_db)
 
+        # 读取 retry 配置
+        with session_scope() as s:
+            sched = s.get(ScheduleDB, schedule_id)
+            max_retries = sched.retry_count if sched else 0
+            retry_delay = sched.retry_delay_seconds if sched else 60
+
         # 执行 Robot（在数据库会话外执行）
-        run_result = await self._execute_robot(run_id, robot)
+        run_result = await self._execute_robot(
+            run_id, robot,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+        )
 
         # 更新执行记录和调度
         with session_scope() as s:
@@ -199,8 +209,14 @@ class Scheduler:
 
         return run_id
 
-    async def _execute_robot(self, run_id: str, robot: Robot) -> dict:
-        """执行 Robot 并返回结果"""
+    async def _execute_robot(
+        self,
+        run_id: str,
+        robot: Robot,
+        max_retries: int = 0,
+        retry_delay: int = 60,
+    ) -> dict:
+        """执行 Robot 并返回结果（支持重试）"""
         started_at = get_local_now()
 
         # 更新状态为 RUNNING
@@ -211,15 +227,46 @@ class Scheduler:
                 run_db.started_at = started_at
                 s.commit()
 
-        # 执行
-        executor = RobotExecutor(robot)
-        result = await executor.execute()
+        last_error = None
+        result = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                executor = RobotExecutor(robot)
+                result = await executor.execute()
+
+                if result.success:
+                    break  # 成功，退出重试
+
+                # 执行返回但标记失败
+                last_error = result.error
+                if attempt < max_retries:
+                    print(f"[Scheduler] 执行失败 (attempt {attempt + 1}/{max_retries + 1}): {last_error}, {retry_delay}s 后重试...")
+                    with session_scope() as s:
+                        run_db = s.get(ScheduledRunDB, run_id)
+                        if run_db:
+                            run_db.retry_attempt = attempt + 1
+                            s.commit()
+                    await asyncio.sleep(retry_delay)
+                    continue
+
+            except Exception as e:
+                last_error = str(e)
+                if attempt < max_retries:
+                    print(f"[Scheduler] 执行异常 (attempt {attempt + 1}/{max_retries + 1}): {e}, {retry_delay}s 后重试...")
+                    with session_scope() as s:
+                        run_db = s.get(ScheduledRunDB, run_id)
+                        if run_db:
+                            run_db.retry_attempt = attempt + 1
+                            s.commit()
+                    await asyncio.sleep(retry_delay)
+                    continue
 
         completed_at = get_local_now()
 
         # 保存结果到文件
         result_file = None
-        if result.success and result.items:
+        if result and result.success and result.items:
             try:
                 result_file = await save_results_to_file(
                     result.items,
@@ -228,15 +275,16 @@ class Scheduler:
             except Exception as e:
                 print(f"[Scheduler] 保存结果失败: {e}")
 
+        success = result.success if result else False
         return {
-            'status': RunStatus.SUCCEEDED.value if result.success else RunStatus.FAILED.value,
+            'status': RunStatus.SUCCEEDED.value if success else RunStatus.FAILED.value,
             'started_at': started_at,
             'completed_at': completed_at,
-            'duration_seconds': result.duration_seconds,
-            'pages_scraped': result.pages_scraped,
-            'items_extracted': len(result.items),
+            'duration_seconds': result.duration_seconds if result else 0,
+            'pages_scraped': result.pages_scraped if result else 0,
+            'items_extracted': len(result.items) if result else 0,
             'result_file': result_file,
-            'error_message': result.error,
+            'error_message': last_error if not success else None,
         }
 
     def _db_to_robot(self, robot_db: RobotDB) -> Robot:

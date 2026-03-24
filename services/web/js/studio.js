@@ -62,25 +62,8 @@ async function startSession() {
         container.addEventListener('elementSelect', (e) => {
             const count = e.detail.selected?.length || 0;
             $('selectionCount').textContent = count;
-            // In manual mode, rebuild configuredFields from browser-canvas selection via addField
-            if (guideState === 'manualSelect' && e.detail.selected) {
-                // Keep non-text fields (e.g. list fields from previous capture), only rebuild text fields
-                configuredFields = configuredFields.filter(f => f.captureType !== 'text');
-                e.detail.selected.forEach((el, i) => {
-                    addField({
-                        name: `text_${i + 1}`,
-                        selector: el.selector,
-                        attr: el.href ? 'href' : (el.src ? 'src' : 'text'),
-                        type: el.element_type || 'text',
-                        captureType: 'text',
-                        confidence: 0,
-                        sampleValues: el.text ? [el.text] : [],
-                        itemSelector: ''
-                    });
-                });
-                renderGuidePanel();
-                updateFinishBtn();
-            }
+            // In capture_text mode, popup handles addField — don't auto-rebuild here
+            // (elementSelect still fires for selection count update)
         });
 
         container.addEventListener('fpsUpdate', (e) => {
@@ -140,29 +123,50 @@ async function startSession() {
 
         container.addEventListener('textCaptured', (e) => {
             const el = e.detail.element;
-            // Generate sequential field name
-            const textStepCount = recordedSteps.filter(s => s.type === 'captured_text').length + 1;
-            const fieldName = `text_${textStepCount}`;
+            // Check if this was a deselect (element removed from selectedElements)
+            const isSelected = e.detail.selected?.some(s =>
+                s.selector === el.selector && s.rect.x === el.rect.x && s.rect.y === el.rect.y
+            );
+            if (!isSelected) {
+                // Element was deselected — remove its field if previously added
+                const idx = configuredFields.findIndex(f =>
+                    f.captureType === 'text' && f.selector === el.selector
+                );
+                if (idx >= 0) configuredFields.splice(idx, 1);
+                closeTextPopup(false); // close popup if open, no deselect needed
+                renderGuidePanel();
+                updateFinishBtn();
+                return;
+            }
+            // Record step
             recordStep('captured_text', {
-                name: fieldName,
                 selector: el.selector,
                 sampleValue: el.text || '',
                 tag: el.tag
             });
-            // Auto-add to configuredFields for text capture mode
-            addField({
-                name: fieldName,
-                selector: el.selector,
-                attr: 'text',
-                type: 'text',
-                captureType: 'text',
-                confidence: 1,
-                sampleValues: [el.text || '']
-            });
             renderRecordedSteps();
-            renderGuidePanel();
-            updateFinishBtn();
-            showToast(`Element captured: ${el.tag} "${(el.text || '').substring(0, 30)}"`, 'success');
+            // Smart skip: if only 1 useful option, skip popup
+            if (shouldSkipPopup(el)) {
+                const namePrefix = el.src ? 'image' : (el.href ? 'link' : 'text');
+                const attr = el.src ? 'src' : (el.href ? 'href' : 'text');
+                const sampleValue = attr === 'text' ? (el.text || '') : (attr === 'href' ? (el.href || '') : (el.src || ''));
+                const count = configuredFields.filter(f => f.captureType === 'text' && f.attr === attr).length + 1;
+                addField({
+                    name: `${namePrefix}_${count}`,
+                    selector: el.selector,
+                    attr,
+                    type: el.element_type || 'text',
+                    captureType: 'text',
+                    confidence: 1,
+                    sampleValues: sampleValue ? [sampleValue] : []
+                });
+                renderGuidePanel();
+                updateFinishBtn();
+                showToast(`Captured ${namePrefix}: "${(sampleValue || el.tag).substring(0, 25)}"`, 'success');
+                return;
+            }
+            // Show popup for user to choose data type
+            showTextPopup(el);
         });
 
         container.addEventListener('pageInfo', (e) => {
@@ -901,6 +905,156 @@ function updateFinishBtn() {
     }
 }
 
+// ---------- Text Capture Popup ----------
+
+let _activeTextPopup = null;
+let _activePopupElement = null;
+
+function shouldSkipPopup(el) {
+    let optionCount = 0;
+    if (el.text && el.text.trim()) optionCount++;
+    if (el.href && el.href.trim()) optionCount++;
+    if (el.src && el.src.trim()) optionCount++;
+    // innerHTML is meaningful only if element has child elements
+    if (el.hasChildElements || el.href || el.src) optionCount++;
+    return optionCount <= 1;
+}
+
+function showTextPopup(elementData) {
+    // Close any existing popup first (cancel previous)
+    closeTextPopup(true);
+
+    _activePopupElement = elementData;
+    window.__textPopupOpen = true;
+
+    // Build options based on element data
+    const options = [];
+    if (elementData.text) {
+        const preview = elementData.text.length > 40 ? elementData.text.substring(0, 40) + '...' : elementData.text;
+        options.push({ label: 'Visible Text', preview, attr: 'text', icon: '\u{1F4DD}' });
+    }
+    if (elementData.href) {
+        const preview = elementData.href.length > 50 ? elementData.href.substring(0, 50) + '...' : elementData.href;
+        options.push({ label: 'Link URL', preview, attr: 'href', icon: '\u{1F517}' });
+    }
+    if (elementData.src) {
+        const preview = elementData.src.length > 50 ? elementData.src.substring(0, 50) + '...' : elementData.src;
+        options.push({ label: 'Image URL', preview, attr: 'src', icon: '\u{1F5BC}' });
+    }
+    // innerHTML: show only if it differs from plain text (has child elements)
+    const rawHtml = elementData.innerHTML || '';
+    const htmlDiffers = rawHtml && rawHtml !== (elementData.text || '').substring(0, 100);
+    if (htmlDiffers) {
+        const preview = rawHtml.length > 50 ? rawHtml.substring(0, 50) + '...' : rawHtml;
+        options.push({ label: 'Inner HTML', preview, attr: 'innerHTML', icon: '\u{1F4C4}' });
+    }
+
+    // Create popup element
+    const popup = document.createElement('div');
+    popup.className = 'text-capture-popup';
+
+    popup.innerHTML = `
+        <div class="tcp-header">
+            <span class="tcp-title">SELECT DATA TO EXTRACT</span>
+            <span class="tcp-tag">&lt;${escapeHtml(elementData.tag)}&gt;</span>
+        </div>
+        ${options.map(opt => `
+            <div class="tcp-option" data-attr="${opt.attr}">
+                <span class="tcp-icon">${opt.icon}</span>
+                <div class="tcp-option-content">
+                    <div class="tcp-option-label">${escapeHtml(opt.label)}</div>
+                    <div class="tcp-option-preview">${escapeHtml(opt.preview)}</div>
+                </div>
+            </div>
+        `).join('<div class="tcp-divider"></div>')}
+    `;
+
+    // Attach click handlers to options
+    popup.querySelectorAll('.tcp-option').forEach(optEl => {
+        optEl.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            const attr = optEl.dataset.attr;
+            const namePrefix = { text: 'text', href: 'link', src: 'image', innerHTML: 'html' }[attr] || 'field';
+            const count = configuredFields.filter(f => f.captureType === 'text' && f.attr === attr).length + 1;
+            const sampleValue = attr === 'text' ? (elementData.text || '') :
+                                attr === 'href' ? (elementData.href || '') :
+                                attr === 'src' ? (elementData.src || '') :
+                                attr === 'innerHTML' ? (elementData.innerHTML || '') : '';
+            addField({
+                name: `${namePrefix}_${count}`,
+                selector: elementData.selector,
+                attr,
+                type: elementData.element_type || 'text',
+                captureType: 'text',
+                confidence: 1,
+                sampleValues: sampleValue ? [sampleValue] : []
+            });
+            closeTextPopup(false);
+            renderGuidePanel();
+            updateFinishBtn();
+            showToast(`Added ${namePrefix}: "${(sampleValue || elementData.tag).substring(0, 25)}"`, 'success');
+        });
+    });
+
+    // Position popup near the clicked element on the canvas
+    const canvasEl = document.getElementById('browserCanvas') || document.querySelector('canvas');
+    const canvasRect = canvasEl ? canvasEl.getBoundingClientRect() : { left: 0, top: 0, right: window.innerWidth };
+    const elRect = elementData.rect || {};
+
+    document.body.appendChild(popup);
+
+    let left = canvasRect.left + (elRect.x || 0) + (elRect.width || 0) + 10;
+    let top = canvasRect.top + (elRect.y || 0) + window.scrollY;
+
+    if (left + 300 > window.innerWidth) {
+        left = canvasRect.left + (elRect.x || 0) - 310;
+    }
+    if (top + popup.offsetHeight > window.innerHeight + window.scrollY) {
+        top = window.innerHeight + window.scrollY - popup.offsetHeight - 10;
+    }
+    if (left < 5) left = 5;
+    if (top < 5) top = 5;
+
+    popup.style.left = left + 'px';
+    popup.style.top = top + 'px';
+
+    _activeTextPopup = popup;
+
+    // Close on click outside (delayed to avoid catching the triggering click)
+    setTimeout(() => {
+        document._tcpClickOutside = (ev) => {
+            if (_activeTextPopup && !_activeTextPopup.contains(ev.target)) {
+                closeTextPopup(true);
+            }
+        };
+        document._tcpEscHandler = (ev) => {
+            if (ev.key === 'Escape') closeTextPopup(true);
+        };
+        document.addEventListener('mousedown', document._tcpClickOutside);
+        document.addEventListener('keydown', document._tcpEscHandler);
+    }, 50);
+}
+
+function closeTextPopup(cancelled) {
+    window.__textPopupOpen = false;
+    if (document._tcpClickOutside) {
+        document.removeEventListener('mousedown', document._tcpClickOutside);
+        document._tcpClickOutside = null;
+    }
+    if (document._tcpEscHandler) {
+        document.removeEventListener('keydown', document._tcpEscHandler);
+        document._tcpEscHandler = null;
+    }
+    if (_activeTextPopup) {
+        _activeTextPopup.remove();
+        _activeTextPopup = null;
+    }
+    if (cancelled && _activePopupElement && canvas) {
+        canvas.deselectElement(_activePopupElement);
+    }
+    _activePopupElement = null;
+}
+
 // ---------- Pagination ----------
 
 async function detectPagination() {
@@ -1477,4 +1631,4 @@ document.addEventListener('DOMContentLoaded', () => {
 if (document.readyState !== 'loading') {
     renderGuidePanel();
 }
-// BUILD: 20260321-2010
+// BUILD: 20260323-popup-v2

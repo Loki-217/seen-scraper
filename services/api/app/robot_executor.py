@@ -302,9 +302,11 @@ class RobotExecutor:
                         if (field.attr === 'text') {
                             value = (el.textContent || '').trim();
                         } else if (field.attr === 'href') {
-                            value = el.href || '';
+                            value = el.href || el.getAttribute('href') || '';
                         } else if (field.attr === 'src') {
-                            value = el.src || el.dataset.src || '';
+                            value = el.src || el.dataset.src || el.getAttribute('src') || '';
+                        } else if (field.attr === 'innerHTML') {
+                            value = (el.innerHTML || '').trim();
                         } else {
                             value = el.getAttribute(field.attr) || '';
                         }

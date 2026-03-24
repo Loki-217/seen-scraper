@@ -608,6 +608,84 @@ body {
     color: var(--panel-text);
 }
 
+/* === Text Capture Popup === */
+.text-capture-popup {
+    position: absolute;
+    z-index: 10000;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    max-width: 300px;
+    min-width: 200px;
+    overflow: hidden;
+    animation: tcpFadeIn 150ms ease-out;
+}
+@keyframes tcpFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+}
+.tcp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px 6px;
+}
+.tcp-title {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--panel-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.tcp-tag {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--panel-text-dim);
+    background: rgba(255,255,255,0.06);
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+.tcp-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.tcp-option:hover {
+    background: rgba(255,255,255,0.08);
+}
+.tcp-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+.tcp-option-content {
+    flex: 1;
+    min-width: 0;
+}
+.tcp-option-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--panel-text);
+}
+.tcp-option-preview {
+    font-size: 11px;
+    color: var(--panel-text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+    font-family: var(--font-mono);
+}
+.tcp-divider {
+    height: 1px;
+    background: var(--panel-border);
+    margin: 0 8px;
+}
+
 /* Pagination (dark theme) */
 .pagination-type-group-dark {
     display: flex;

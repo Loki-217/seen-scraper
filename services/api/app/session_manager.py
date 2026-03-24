@@ -242,7 +242,9 @@ class BrowserSession:
                                 href: el.href || null,
                                 src: el.src || null,
                                 placeholder: el.placeholder || null,
-                                value: el.value || null
+                                value: el.value || null,
+                                innerHTML: (el.innerHTML || '').substring(0, 100),
+                                hasChildElements: el.children.length > 0
                             });
                         });
                     } catch(e) {
