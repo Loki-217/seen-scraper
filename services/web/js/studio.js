@@ -24,6 +24,191 @@ const $ = (id) => document.getElementById(id);
 
 // ---------- Session Management ----------
 
+let _containerListenersBound = false;
+
+function _bindContainerListeners(container) {
+    if (_containerListenersBound) return;
+    _containerListenersBound = true;
+
+    container.addEventListener('sessionReady', (e) => {
+        currentSession = {
+            sessionId: e.detail.sessionId,
+            pageInfo: e.detail.pageInfo
+        };
+        const pageUrl = e.detail.pageInfo?.url || $('urlInput')?.value || '';
+        $('currentUrl').textContent = pageUrl;
+        $('elementCount').textContent = e.detail.elements?.length || 0;
+        setStatus('connected', 'Connected');
+        lastRecordedUrl = pageUrl;
+        recordStep('navigation', { url: pageUrl });
+        setGuideState('initial');
+    });
+
+    container.addEventListener('elementsUpdated', (e) => {
+        $('elementCount').textContent = e.detail.count || 0;
+    });
+
+    container.addEventListener('elementSelect', (e) => {
+        const count = e.detail.selected?.length || 0;
+        $('selectionCount').textContent = count;
+    });
+
+    container.addEventListener('fpsUpdate', (e) => {
+        $('frameRate').textContent = e.detail.fps || 0;
+    });
+
+    container.addEventListener('analyzeResult', (e) => {
+        if (_analyzeTimeout) { clearTimeout(_analyzeTimeout); _analyzeTimeout = null; }
+        smartResult = e.detail;
+        setGuideState('configuring');
+    });
+
+    container.addEventListener('analyzeError', (e) => {
+        if (_analyzeTimeout) { clearTimeout(_analyzeTimeout); _analyzeTimeout = null; }
+        showToast('Smart detect failed. Try "From a list" to select manually.', 'warning', 5000);
+        setGuideState('captureType');
+    });
+
+    container.addEventListener('listCaptured', (e) => {
+        const d = e.detail;
+        if (d.error) {
+            showToast(d.error, 'warning');
+            return;
+        }
+        if (d.itemCount < 2) {
+            showToast('No list detected at this position. Try hovering over a different item.', 'warning');
+            return;
+        }
+
+        recordStep('captured_list', {
+            name: 'List',
+            selector: d.itemSelector,
+            containerSelector: d.containerSelector,
+            itemCount: d.itemCount,
+            sampleItems: d.sampleItems || [],
+            fields: []
+        });
+        renderRecordedSteps();
+        showToast(`List captured: ${d.itemCount} items`, 'success');
+
+        if (d.rawItemData && (d.rawItemData.texts?.length || d.rawItemData.links?.length || d.rawItemData.images?.length)) {
+            _analyzeFieldsWithAI(d);
+            return;
+        }
+        _buildFieldsFromLegacyData(d);
+    });
+
+    container.addEventListener('textCaptured', (e) => {
+        const el = e.detail.element;
+        const isSelected = e.detail.selected?.some(s =>
+            s.selector === el.selector && s.rect.x === el.rect.x && s.rect.y === el.rect.y
+        );
+        if (!isSelected) {
+            const idx = configuredFields.findIndex(f =>
+                f.captureType === 'text' && f.selector === el.selector
+            );
+            if (idx >= 0) configuredFields.splice(idx, 1);
+            closeTextPopup(false);
+            renderGuidePanel();
+            updateFinishBtn();
+            return;
+        }
+        recordStep('captured_text', {
+            selector: el.selector,
+            sampleValue: el.text || '',
+            tag: el.tag
+        });
+        renderRecordedSteps();
+        if (shouldSkipPopup(el)) {
+            const namePrefix = el.src ? 'image' : (el.href ? 'link' : 'text');
+            const attr = el.src ? 'src' : (el.href ? 'href' : 'text');
+            const sampleValue = attr === 'text' ? (el.text || '') : (attr === 'href' ? (el.href || '') : (el.src || ''));
+            const count = configuredFields.filter(f => f.captureType === 'text' && f.attr === attr).length + 1;
+            addField({
+                name: `${namePrefix}_${count}`,
+                selector: el.selector,
+                attr,
+                type: el.element_type || 'text',
+                captureType: 'text',
+                confidence: 1,
+                sampleValues: sampleValue ? [sampleValue] : []
+            });
+            renderGuidePanel();
+            updateFinishBtn();
+            showToast(`Captured ${namePrefix}: "${(sampleValue || el.tag).substring(0, 25)}"`, 'success');
+            return;
+        }
+        showTextPopup(el);
+    });
+
+    container.addEventListener('pageInfo', (e) => {
+        const newUrl = e.detail.url;
+        if (newUrl && newUrl !== lastRecordedUrl) {
+            lastRecordedUrl = newUrl;
+            $('currentUrl').textContent = newUrl;
+            recordStep('navigation', { url: newUrl });
+            renderRecordedSteps();
+            if (canvas && canvas.getMode() === 'capture_list') {
+                canvas.reinjectListDetection();
+            }
+        }
+    });
+
+    container.addEventListener('modeChange', () => {
+        // no-op
+    });
+
+    container.addEventListener('navigateClick', (e) => {
+        recordStep('interaction', {
+            action: 'click',
+            selector: e.detail.selector,
+            x: e.detail.x,
+            y: e.detail.y
+        });
+        renderRecordedSteps();
+    });
+
+    container.addEventListener('navigateInput', (e) => {
+        // Deduplicate: if same selector already has an input step, update value in place
+        const existingIdx = recordedSteps.findIndex(
+            s => s.type === 'interaction' && s.details.action === 'input' && s.details.selector === e.detail.selector
+        );
+        if (existingIdx !== -1) {
+            recordedSteps[existingIdx].details.value = e.detail.value;
+        } else {
+            recordStep('interaction', {
+                action: 'input',
+                selector: e.detail.selector,
+                value: e.detail.value
+            });
+        }
+        renderRecordedSteps();
+    });
+
+    container.addEventListener('similarFound', (e) => {
+        showToast(`Found ${e.detail.count} similar items`, 'success');
+    });
+
+    container.addEventListener('sessionError', (e) => {
+        showToast(`Error: ${e.detail.error}`, 'error');
+        closeSession();
+    });
+
+    container.addEventListener('reconnecting', (e) => {
+        setStatus('connecting', `Reconnecting (${e.detail.attempt}/${e.detail.max})...`);
+    });
+
+    container.addEventListener('connectionLost', () => {
+        showToast('Connection lost. Please reload the page.', 'error', 10000);
+        closeSession();
+    });
+
+    container.addEventListener('sessionExpired', () => {
+        showToast('Session expired. Please start a new session.', 'warning', 5000);
+        closeSession();
+    });
+}
+
 async function startSession() {
     const url = $('urlInput').value.trim();
     if (!url) {
@@ -38,187 +223,8 @@ async function startSession() {
 
     try {
         canvas = new BrowserCanvas('browserContainer');
-
         const container = $('browserContainer');
-        container.addEventListener('sessionReady', (e) => {
-            currentSession = {
-                sessionId: e.detail.sessionId,
-                pageInfo: e.detail.pageInfo
-            };
-            $('currentUrl').textContent = e.detail.pageInfo?.url || url;
-            $('elementCount').textContent = e.detail.elements?.length || 0;
-            setStatus('connected', 'Connected');
-            // Record initial navigation step
-            const navUrl = e.detail.pageInfo?.url || url;
-            lastRecordedUrl = navUrl;
-            recordStep('navigation', { url: navUrl });
-            setGuideState('initial');
-        });
-
-        container.addEventListener('elementsUpdated', (e) => {
-            $('elementCount').textContent = e.detail.count || 0;
-        });
-
-        container.addEventListener('elementSelect', (e) => {
-            const count = e.detail.selected?.length || 0;
-            $('selectionCount').textContent = count;
-            // In capture_text mode, popup handles addField — don't auto-rebuild here
-            // (elementSelect still fires for selection count update)
-        });
-
-        container.addEventListener('fpsUpdate', (e) => {
-            $('frameRate').textContent = e.detail.fps || 0;
-        });
-
-        container.addEventListener('analyzeResult', (e) => {
-            if (_analyzeTimeout) { clearTimeout(_analyzeTimeout); _analyzeTimeout = null; }
-            smartResult = e.detail;
-            setGuideState('configuring');
-        });
-
-        container.addEventListener('analyzeError', (e) => {
-            if (_analyzeTimeout) { clearTimeout(_analyzeTimeout); _analyzeTimeout = null; }
-            showToast('Smart detect failed. Try "From a list" to select manually.', 'warning', 5000);
-            setGuideState('captureType');
-        });
-
-        container.addEventListener('listCaptured', (e) => {
-            const d = e.detail;
-            console.log('[DEBUG] listCaptured event detail keys:', JSON.stringify(Object.keys(d)));
-            console.log('[DEBUG] rawItemData exists:', !!d.rawItemData);
-            if (d.rawItemData) {
-                console.log('[DEBUG] rawItemData texts count:', d.rawItemData.texts?.length);
-                console.log('[DEBUG] rawItemData links count:', d.rawItemData.links?.length);
-                console.log('[DEBUG] rawItemData images count:', d.rawItemData.images?.length);
-            }
-            if (d.error) {
-                showToast(d.error, 'warning');
-                return;
-            }
-            if (d.itemCount < 2) {
-                showToast('No list detected at this position. Try hovering over a different item.', 'warning');
-                return;
-            }
-
-            recordStep('captured_list', {
-                name: 'List',
-                selector: d.itemSelector,
-                containerSelector: d.containerSelector,
-                itemCount: d.itemCount,
-                sampleItems: d.sampleItems || [],
-                fields: []
-            });
-            renderRecordedSteps();
-            showToast(`List captured: ${d.itemCount} items`, 'success');
-
-            // If rawItemData is available, try AI analysis first
-            if (d.rawItemData && (d.rawItemData.texts?.length || d.rawItemData.links?.length || d.rawItemData.images?.length)) {
-                _analyzeFieldsWithAI(d);
-                return;
-            }
-
-            // No rawItemData — use legacy field building
-            _buildFieldsFromLegacyData(d);
-        });
-
-        container.addEventListener('textCaptured', (e) => {
-            const el = e.detail.element;
-            // Check if this was a deselect (element removed from selectedElements)
-            const isSelected = e.detail.selected?.some(s =>
-                s.selector === el.selector && s.rect.x === el.rect.x && s.rect.y === el.rect.y
-            );
-            if (!isSelected) {
-                // Element was deselected — remove its field if previously added
-                const idx = configuredFields.findIndex(f =>
-                    f.captureType === 'text' && f.selector === el.selector
-                );
-                if (idx >= 0) configuredFields.splice(idx, 1);
-                closeTextPopup(false); // close popup if open, no deselect needed
-                renderGuidePanel();
-                updateFinishBtn();
-                return;
-            }
-            // Record step
-            recordStep('captured_text', {
-                selector: el.selector,
-                sampleValue: el.text || '',
-                tag: el.tag
-            });
-            renderRecordedSteps();
-            // Smart skip: if only 1 useful option, skip popup
-            if (shouldSkipPopup(el)) {
-                const namePrefix = el.src ? 'image' : (el.href ? 'link' : 'text');
-                const attr = el.src ? 'src' : (el.href ? 'href' : 'text');
-                const sampleValue = attr === 'text' ? (el.text || '') : (attr === 'href' ? (el.href || '') : (el.src || ''));
-                const count = configuredFields.filter(f => f.captureType === 'text' && f.attr === attr).length + 1;
-                addField({
-                    name: `${namePrefix}_${count}`,
-                    selector: el.selector,
-                    attr,
-                    type: el.element_type || 'text',
-                    captureType: 'text',
-                    confidence: 1,
-                    sampleValues: sampleValue ? [sampleValue] : []
-                });
-                renderGuidePanel();
-                updateFinishBtn();
-                showToast(`Captured ${namePrefix}: "${(sampleValue || el.tag).substring(0, 25)}"`, 'success');
-                return;
-            }
-            // Show popup for user to choose data type
-            showTextPopup(el);
-        });
-
-        container.addEventListener('pageInfo', (e) => {
-            const newUrl = e.detail.url;
-            if (newUrl && newUrl !== lastRecordedUrl) {
-                lastRecordedUrl = newUrl;
-                $('currentUrl').textContent = newUrl;
-                recordStep('navigation', { url: newUrl });
-                renderRecordedSteps();
-                // Re-inject list detection script if in capture_list mode
-                if (canvas && canvas.getMode() === 'capture_list') {
-                    canvas.reinjectListDetection();
-                }
-            }
-        });
-
-        container.addEventListener('modeChange', (e) => {
-            console.log(`[Studio] Mode changed: ${e.detail.previousMode} → ${e.detail.mode}`);
-        });
-
-        container.addEventListener('navigateClick', (e) => {
-            recordStep('interaction', {
-                action: 'click',
-                selector: e.detail.selector,
-                x: e.detail.x,
-                y: e.detail.y
-            });
-            renderRecordedSteps();
-        });
-
-        container.addEventListener('similarFound', (e) => {
-            showToast(`Found ${e.detail.count} similar items`, 'success');
-        });
-
-        container.addEventListener('sessionError', (e) => {
-            showToast(`Error: ${e.detail.error}`, 'error');
-            closeSession();
-        });
-
-        container.addEventListener('reconnecting', (e) => {
-            setStatus('connecting', `Reconnecting (${e.detail.attempt}/${e.detail.max})...`);
-        });
-
-        container.addEventListener('connectionLost', () => {
-            showToast('Connection lost. Please reload the page.', 'error', 10000);
-            closeSession();
-        });
-
-        container.addEventListener('sessionExpired', () => {
-            showToast('Session expired. Please start a new session.', 'warning', 5000);
-            closeSession();
-        });
+        _bindContainerListeners(container);
 
         await canvas.initSession(url);
 
@@ -317,9 +323,6 @@ function renderGuidePanel() {
 
     // Update footer buttons visibility
     updateFinishBtn();
-    console.log('[DEBUG] renderGuidePanel done, guideState:', guideState, 'fields:', configuredFields.length,
-        'captureMoreBtn:', document.getElementById('captureMoreBtn') ? 'FOUND' : 'NOT_IN_DOM',
-        'finishBtn:', document.getElementById('finishBtn') ? 'FOUND' : 'NOT_IN_DOM');
 
     // Append recorded steps below guide content
     renderRecordedSteps();
@@ -474,23 +477,18 @@ function startSmartDetect() {
 // ---------- AI Field Analysis ----------
 
 async function _analyzeFieldsWithAI(d) {
-    console.log('[DEBUG] _analyzeFieldsWithAI called');
-    console.log('[DEBUG] fetch URL:', `${API_BASE}/smart/analyze-fields`);
     // Show loading state in configuring panel
     setGuideState('configuring');
     _showAnalyzingOverlay(true);
 
     try {
         const body = JSON.stringify({ rawItemData: d.rawItemData });
-        console.log('[DEBUG] request body length:', body.length);
         const res = await fetch(`${API_BASE}/smart/analyze-fields`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: body
         });
-        console.log('[DEBUG] analyze-fields response status:', res.status);
         const result = await res.json();
-        console.log('[DEBUG] analyze-fields result:', JSON.stringify(result).substring(0, 500));
 
         _showAnalyzingOverlay(false);
 
@@ -875,12 +873,10 @@ function addAllFields(listIdx) {
 }
 
 function addField(field) {
-    console.log('[DEBUG] addField called, name:', field.name, 'selector:', field.selector?.substring(0, 40));
     if (configuredFields.some(f => f.selector === field.selector && f.attr === field.attr)) return;
     // Deduplicate name: append _2, _3... if name already exists
     let name = field.name;
     const nameExists = configuredFields.some(f => f.name === name);
-    console.log('[DEBUG] addField dedup check, name:', name, 'exists:', nameExists);
     if (nameExists) {
         let suffix = 2;
         while (configuredFields.some(f => f.name === `${name}_${suffix}`)) suffix++;
@@ -1270,7 +1266,7 @@ function formatStepDescription(step) {
                     : `Click at (${d.x}, ${d.y})`;
             }
             if (d.action === 'scroll') return 'Scroll page';
-            if (d.action === 'input') return 'Input text';
+            if (d.action === 'input') return 'Input: ' + truncate(d.selector || '', 20) + ' = "' + truncate(d.value || '', 15) + '"';
             return d.action || 'Interaction';
         case 'captured_list':
             return 'Capture list: ' + truncate(d.selector || d.name || '', 30) + (d.itemCount ? ` (${d.itemCount} items)` : '');
@@ -1315,24 +1311,35 @@ function loadRecordingData(data) {
 }
 
 function stepsToActions() {
-    // Backend Action model only accepts: click, scroll, input, wait, hover, select
-    const validTypes = ['click', 'scroll', 'input', 'wait', 'hover', 'select'];
-    return recordedSteps
-        .filter(s => s.type === 'interaction')
-        .map(s => {
-            const d = s.details;
-            if (d.action === 'click') {
-                return { type: 'click', selector: d.selector || '', x: d.x, y: d.y };
-            }
-            if (d.action === 'scroll') {
-                return { type: 'scroll', x: d.x || 0, y: d.y || 0 };
-            }
-            if (d.action === 'input') {
-                return { type: 'input', selector: d.selector || '', value: d.value || '' };
-            }
-            return { type: d.action, selector: d.selector || '' };
-        })
-        .filter(a => validTypes.includes(a.type));
+    const validTypes = ['click', 'scroll', 'input', 'wait', 'hover', 'select', 'navigate'];
+    const actions = [];
+    let hasUserAction = false;
+
+    for (const step of recordedSteps) {
+        // Navigation steps: only keep those after user actions (skip initial auto-redirects)
+        if (step.type === 'navigation') {
+            if (!hasUserAction) continue;
+            actions.push({ type: 'navigate', url: step.details.url || '' });
+            continue;
+        }
+
+        if (step.type !== 'interaction') continue;
+
+        const d = step.details;
+        hasUserAction = true;
+
+        if (d.action === 'click') {
+            actions.push({ type: 'click', selector: d.selector || '', x: d.x, y: d.y });
+        } else if (d.action === 'scroll') {
+            actions.push({ type: 'scroll', x: d.x || 0, y: d.y || 0 });
+        } else if (d.action === 'input') {
+            actions.push({ type: 'input', selector: d.selector || '', value: d.value || '' });
+        } else {
+            actions.push({ type: d.action, selector: d.selector || '' });
+        }
+    }
+
+    return actions.filter(a => validTypes.includes(a.type));
 }
 
 // ---------- Save Robot ----------
@@ -1394,11 +1401,6 @@ async function doSaveRobot() {
             wait_ms: paginationConfig.wait_ms || 1000,
             max_rows: paginationConfig.max_rows || null
         } : null;
-        console.log('[DEBUG] paginationConfig.max_rows:', paginationConfig?.max_rows, 'maxRowsSetting:', maxRowsSetting);
-        console.log('[DEBUG] saving pagination:', JSON.stringify(_paginationPayload));
-        console.log('[DEBUG] Saving robot with fields:', JSON.stringify(configuredFields, null, 2));
-        console.log('[DEBUG] final configuredFields:', JSON.stringify(configuredFields.map(f => ({name: f.name, selector: f.selector?.substring(0, 30)}))));
-        console.log('[DEBUG] saveAsRobot item_selector:', JSON.stringify(itemSelector));
         const res = await fetch(`${API_BASE}/robots`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

@@ -81,7 +81,6 @@ async def enhance_field_names_with_ai(detected_lists: List[DetectedList]) -> Lis
 
             except Exception as e:
                 # AI 调用失败，保持原名
-                print(f"[Smart] AI naming failed for {field.selector}: {e}")
                 continue
 
     return detected_lists
@@ -476,7 +475,6 @@ def _map_ai_result_to_fields(ai_fields: List[Dict], raw: Dict[str, Any]) -> List
             link_text = (source_item.get("text") or "").strip()
             text_match = _find_text_with_same_content(texts, link_text)
             if text_match and text_match.get("selector"):
-                print(f"[DEBUG] Redirecting '{name}' from links to texts (text='{link_text[:30]}')")
                 source_item = text_match
                 source_type = "texts"
 
@@ -499,11 +497,6 @@ def _map_ai_result_to_fields(ai_fields: List[Dict], raw: Dict[str, Any]) -> List
             attr=attr,
             captureType="list"
         ))
-
-    # Log final fields
-    print(f"[DEBUG] Final fields:")
-    for f in result:
-        print(f"  {f.name} | selector={f.selector[:60]} | attr={f.attr}")
 
     return result
 
@@ -573,18 +566,6 @@ async def analyze_fields(req: RawItemDataRequest):
     返回带有 CSS selector 的字段列表。如果 AI 不可用则降级到基础提取。
     """
     raw = req.rawItemData
-    print(f"[DEBUG] analyze-fields called, texts={len(raw.get('texts',[]))} links={len(raw.get('links',[]))} images={len(raw.get('images',[]))}")
-
-    # Print all texts for debugging
-    print("[DEBUG] rawItemData texts:")
-    for i, t in enumerate(raw.get("texts", [])):
-        print(f"  [{i}] text='{str(t.get('text',''))[:60]}' selector='{t.get('selector','')}'")
-    print("[DEBUG] rawItemData links:")
-    for i, l in enumerate(raw.get("links", [])):
-        print(f"  [{i}] text='{str(l.get('text',''))[:40]}' href='{str(l.get('href',''))[:60]}' selector='{l.get('selector','')}'")
-    print("[DEBUG] rawItemData images:")
-    for i, img in enumerate(raw.get("images", [])):
-        print(f"  [{i}] alt='{str(img.get('alt',''))[:40]}' src='{str(img.get('src',''))[:60]}' selector='{img.get('selector','')}'")
 
     # Validate input has content
     has_content = (
@@ -593,20 +574,12 @@ async def analyze_fields(req: RawItemDataRequest):
         len(raw.get("images", [])) > 0
     )
     if not has_content:
-        print("[DEBUG] analyze-fields: no content, returning empty")
         return AnalyzeFieldsResponse(fields=[], aiEnhanced=False)
-
-    print(f"[DEBUG] ai_service.enabled={ai_service.enabled}")
-    print(f"[DEBUG] API key exists: {bool(ai_service.api_key)}, key prefix: {ai_service.api_key[:8] if ai_service.api_key else 'None'}")
-    print(f"[DEBUG] endpoint_id: {ai_service.endpoint_id}")
-    print(f"[DEBUG] api_base: {ai_service.api_base}")
 
     # Try AI analysis
     if ai_service.enabled:
         try:
             prompt = _build_analyze_fields_prompt(raw)
-            print(f"[DEBUG] prompt built, length={len(prompt)}, first 300 chars:")
-            print(prompt[:300])
 
             import httpx
             headers = {
@@ -629,21 +602,16 @@ async def analyze_fields(req: RawItemDataRequest):
                 'max_tokens': 800
             }
 
-            print(f"[AI] analyze-fields: calling DeepSeek API...")
-
             async with httpx.AsyncClient(timeout=15.0) as client:
                 response = await client.post(
                     f'{ai_service.api_base}/chat/completions',
                     headers=headers,
                     json=payload
                 )
-                print(f"[DEBUG] DeepSeek HTTP status: {response.status_code}")
-                print(f"[DEBUG] DeepSeek raw response: {response.text[:500]}")
                 response.raise_for_status()
 
                 data = response.json()
                 content = data['choices'][0]['message']['content'].strip()
-                print(f"[AI] analyze-fields AI content: {content[:500]}")
 
                 # Parse JSON array from response
                 # Try to extract JSON array even if wrapped in markdown
@@ -653,21 +621,14 @@ async def analyze_fields(req: RawItemDataRequest):
                 else:
                     raise ValueError(f"No JSON array found in AI response: {content[:200]}")
 
-                print(f"[DEBUG] AI returned {len(ai_fields)} raw fields: {ai_fields}")
                 fields = _map_ai_result_to_fields(ai_fields, raw)
-                print(f"[DEBUG] Mapped to {len(fields)} fields with selectors")
 
                 if fields:
-                    print(f"[DEBUG] Returning AI fields: {[(f.name, f.selector, f.attr) for f in fields]}")
                     return AnalyzeFieldsResponse(fields=fields, aiEnhanced=True)
-                else:
-                    print("[AI] analyze-fields: AI returned fields but none mapped to selectors, falling back")
 
-        except Exception as e:
-            print(f"[AI] analyze-fields failed, error type: {type(e).__name__}")
-            print(f"[AI] analyze-fields error: {str(e)[:500]}")
+        except Exception:
+            pass
 
     # Fallback: basic extraction without AI
     fallback = _fallback_fields_from_raw(raw)
-    print(f"[DEBUG] Fallback fields: {[(f.name, f.selector, f.attr) for f in fallback]}")
     return AnalyzeFieldsResponse(fields=fallback, aiEnhanced=False)

@@ -1,23 +1,24 @@
-.venv/
-__pycache__/
-*.pyc
-.env
-dist/
-node_modules/# Python
+# Python
 .venv/
 __pycache__/
 *.pyc
 
-# 本地环境
+# Environment
 .env
 
-# 本地数据 & 导出
-data/*.db
-*.sqlite
+# Runtime data
+services/api/data/results/
 *.db
-run-*.csv
-seen.db
+*.sqlite
+data/*.db
+
+# Build
+dist/
+node_modules/
 
 # IDE
 .vscode/
 .idea/
+
+# Docker
+*.log

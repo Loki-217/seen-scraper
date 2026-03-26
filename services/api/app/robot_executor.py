@@ -4,6 +4,7 @@ Robot 执行器 - 负责执行 Robot 配置，抓取数据
 """
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -46,25 +47,20 @@ class RobotExecutor:
         """执行 Robot，返回结果"""
         self.start_time = time.time()
         self._max_rows = self.robot.pagination.max_rows if self.robot.pagination else None
-        print(f"[DEBUG] robot.id: {self.robot.id}")
-        print(f"[DEBUG] parsed pagination: {self.robot.pagination}")
-        print(f"[DEBUG] max_rows: {self._max_rows}")
-        print(f"[DEBUG] max_pages: {self.robot.pagination.max_pages if self.robot.pagination else 'no pagination'}")
 
         try:
             await self._init_browser()
             await self._navigate_to_origin()
             await self._replay_actions()
+            logging.info(f"[RobotExecutor] All actions done. Current URL = {self.page.url}, about to extract data")
             await self._extract_data()
 
             if self.robot.pagination and not self._reached_max_rows():
                 await self._handle_pagination()
 
             # 最终截断到 max_rows
-            print(f"[DEBUG] Before truncate: {len(self.results)} items, max_rows={self._max_rows}")
             if self._max_rows and len(self.results) > self._max_rows:
                 self.results = self.results[:self._max_rows]
-            print(f"[DEBUG] After truncate: {len(self.results)} items")
 
             return self._build_result(success=True)
 
@@ -79,13 +75,16 @@ class RobotExecutor:
         """初始化浏览器（带反检测配置）"""
         playwright = await async_playwright().start()
 
-        # 反检测配置
+        # 反检测配置（与 session_manager 对齐）
         self.browser = await playwright.chromium.launch(
             headless=True,
             args=[
                 '--disable-blink-features=AutomationControlled',
-                '--disable-dev-shm-usage',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process',
                 '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
             ]
         )
 
@@ -97,29 +96,30 @@ class RobotExecutor:
             timezone_id='Asia/Shanghai',
         )
 
-        # 注入反检测脚本
+        # 注入反检测脚本（与 session_manager 对齐）
         await self.context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            Object.defineProperty(navigator, 'webdriver', { get: () => false });
             Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
-            window.chrome = { runtime: {} };
         """)
 
         self.page = await self.context.new_page()
-        self.page.on('console', lambda msg: print(f'[Browser] {msg.text}') if 'DIAG' in msg.text else None)
         self.page.set_default_timeout(self.PAGE_LOAD_TIMEOUT)
 
     async def _navigate_to_origin(self):
         """导航到起始URL"""
         await self.page.goto(self.robot.origin_url, wait_until='networkidle')
+        logging.info(f"[RobotExecutor] After navigate to origin: actual URL = {self.page.url}")
         await self._random_delay(500, 1500)
 
     async def _replay_actions(self):
         """重放录制的操作序列"""
-        for action in self.robot.actions:
+        actions = self.robot.actions
+        for i, action in enumerate(actions):
             # 检查总超时
             self._check_timeout()
             await self._execute_action(action)
+            # === 临时调试日志 ===
+            logging.info(f"[RobotExecutor] Action {i+1}/{len(actions)}: type={action.type}, selector={action.selector or ''}, value={action.value or ''} → URL now: {self.page.url}")
 
     async def _execute_action(self, action: Action):
         """执行单个操作"""
@@ -128,6 +128,12 @@ class RobotExecutor:
                 await self.page.click(action.selector)
             elif action.x is not None and action.y is not None:
                 await self.page.mouse.click(action.x, action.y)
+
+            # click 后等待，如果触发了导航则等导航完成
+            try:
+                await self.page.wait_for_load_state('networkidle', timeout=5000)
+            except Exception:
+                pass
 
         elif action.type == ActionType.SCROLL:
             if action.y:
@@ -151,6 +157,11 @@ class RobotExecutor:
             if action.selector and action.value:
                 await self.page.select_option(action.selector, action.value)
 
+        elif action.type == ActionType.NAVIGATE:
+            if action.url:
+                await self.page.goto(action.url, wait_until='domcontentloaded', timeout=30000)
+                await self.page.wait_for_timeout(1000)
+
         # 操作后延迟
         if action.delay_ms:
             await asyncio.sleep(action.delay_ms / 1000)
@@ -168,23 +179,17 @@ class RobotExecutor:
 
     async def _extract_page_data(self) -> List[Dict[str, Any]]:
         """提取当前页面的数据"""
-        print(f"[DEBUG] item_selector: '{self.robot.item_selector}'")
-        print(f"[DEBUG] fields count: {len(self.robot.fields) if self.robot.fields else 0}")
         if not self.robot.fields:
-            print(f"[DEBUG] Early return: no fields")
             return []
 
         # Split fields by captureType
         list_fields = [f for f in self.robot.fields if getattr(f, 'captureType', 'list') == 'list']
         text_fields = [f for f in self.robot.fields if getattr(f, 'captureType', 'list') == 'text']
-        print(f"[DEBUG] list_fields: {len(list_fields)}, text_fields: {len(text_fields)}")
 
         # Text-only mode: no list fields or no item_selector
         if not list_fields or not self.robot.item_selector:
             if text_fields:
-                print(f"[DEBUG] Text-only mode: extracting fields directly from page")
                 return await self._extract_text_fields(text_fields)
-            print(f"[DEBUG] Early return: no usable fields")
             return []
 
         # Extract text fields first (page-level, single values)
@@ -193,9 +198,7 @@ class RobotExecutor:
             text_rows = await self._extract_text_fields(text_fields)
             if text_rows:
                 text_data = text_rows[0]
-            print(f"[DEBUG] Text fields extracted: {list(text_data.keys())}")
 
-        print(f"[DEBUG] Extracting list fields: {[(f.name, f.selector) for f in list_fields]}")
         # 构建提取脚本 (only list fields)
         fields_config = [
             {
@@ -206,6 +209,12 @@ class RobotExecutor:
             }
             for f in list_fields
         ]
+
+        # === 临时调试日志 ===
+        item_count = await self.page.evaluate(
+            f'document.querySelectorAll("{self.robot.item_selector}").length'
+        )
+        logging.info(f"[RobotExecutor] item_selector = '{self.robot.item_selector}', matched {item_count} elements on page {self.page.url}")
 
         data = await self.page.evaluate('''
             ({itemSelector, fields}) => {
@@ -377,7 +386,6 @@ class RobotExecutor:
 
             self.results.extend(page_data)
             self.pages_scraped += 1
-            print(f"[DEBUG] Page {page_num}: got {len(page_data)} items, total so far: {len(self.results)}")
 
             # 随机延迟
             await self._random_delay(500, 1500)
@@ -464,23 +472,26 @@ class RobotExecutor:
 async def save_results_to_file(
     results: List[Dict[str, Any]],
     robot_name: str,
+    robot_id: str = "",
     output_dir: str = "data/results"
 ) -> str:
-    """保存结果到 CSV 文件"""
+    """保存结果到 CSV 文件，按 robot_id 分目录"""
     import csv
 
-    # 创建目录
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    # 按 robot_id 分目录
+    if robot_id:
+        result_dir = Path(output_dir) / robot_id
+    else:
+        result_dir = Path(output_dir)
+    result_dir.mkdir(parents=True, exist_ok=True)
 
-    # 生成文件名
+    # 生成文件名（只用时间戳）
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_name = "".join(c if c.isalnum() else "_" for c in robot_name)
-    filename = f"{safe_name}_{timestamp}.csv"
-    filepath = Path(output_dir) / filename
+    filename = f"{timestamp}.csv"
+    filepath = result_dir / filename
 
     # 写入 CSV 文件
     if results:
-        # 获取所有字段名
         fieldnames = list(results[0].keys())
 
         with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:

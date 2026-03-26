@@ -82,8 +82,20 @@ class BrowserSession:
         """获取页面上的所有可选择元素（包括文本、图片等）"""
         self.touch()
 
+        try:
+            elements_data = await self._get_elements_evaluate()
+        except Exception as e:
+            error_msg = str(e)
+            if "Execution context was destroyed" in error_msg or "navigation" in error_msg.lower():
+                # Page is navigating — return empty list, will refresh after navigation completes
+                return []
+            raise
+        return [InteractiveElement(**el) for el in elements_data]
+
+    async def _get_elements_evaluate(self):
+        """Inner evaluate call for get_elements — separated for navigation-safe wrapping"""
         # 注入获取元素的脚本
-        elements_data = await self.page.evaluate('''
+        return await self.page.evaluate('''
             () => {
                 const elements = [];
                 // 扩展选择器 - 包含所有常见内容元素
@@ -262,8 +274,6 @@ class BrowserSession:
             }
         ''')
 
-        return [InteractiveElement(**el) for el in elements_data]
-
     async def execute_action(self, action: Action) -> ActionResult:
         """执行操作"""
         self.touch()
@@ -393,6 +403,9 @@ class BrowserSession:
         })
         self.screencast_active = True
 
+        # Listen for page navigation — notify frontend of URL changes
+        self.page.on("load", lambda: asyncio.ensure_future(self._on_page_navigated()))
+
     async def _on_screencast_frame(self, params: dict):
         """Broadcast frame to all connected WebSocket clients"""
         await self.cdp_session.send("Page.screencastFrameAck", {
@@ -424,6 +437,27 @@ class BrowserSession:
             except Exception:
                 pass
             self.screencast_active = False
+
+    async def _on_page_navigated(self):
+        """Called after page navigation completes — notify frontend of new URL"""
+        try:
+            await asyncio.sleep(0.5)  # Let page stabilize
+            url = self.page.url
+            title = await self.page.title()
+            message = json.dumps({
+                "type": "pageInfo",
+                "url": url,
+                "title": title
+            })
+            dead_sockets = set()
+            for ws in self.websockets:
+                try:
+                    await ws.send_text(message)
+                except Exception:
+                    dead_sockets.add(ws)
+            self.websockets -= dead_sockets
+        except Exception:
+            pass  # Page may still be loading — safe to ignore
 
     # ---------- List Detection Script Injection ----------
 
@@ -769,29 +803,37 @@ class BrowserSession:
         if not self.cdp_session:
             return
         event_type = event.get("type")
-        if event_type in ("mousePressed", "mouseReleased", "mouseMoved"):
-            await self.cdp_session.send("Input.dispatchMouseEvent", {
-                "type": event_type,
-                "x": event["x"],
-                "y": event["y"],
-                "button": event.get("button", "left"),
-                "clickCount": event.get("clickCount", 1)
-            })
-        elif event_type == "mouseWheel":
-            await self.cdp_session.send("Input.dispatchMouseEvent", {
-                "type": "mouseWheel",
-                "x": event.get("x", 0),
-                "y": event.get("y", 0),
-                "deltaX": event.get("deltaX", 0),
-                "deltaY": event.get("deltaY", 300)
-            })
-        elif event_type in ("keyDown", "keyUp"):
-            await self.cdp_session.send("Input.dispatchKeyEvent", {
-                "type": event_type,
-                "key": event.get("key", ""),
-                "code": event.get("code", ""),
-                "text": event.get("text", "")
-            })
+        try:
+            if event_type in ("mousePressed", "mouseReleased", "mouseMoved"):
+                await self.cdp_session.send("Input.dispatchMouseEvent", {
+                    "type": event_type,
+                    "x": event["x"],
+                    "y": event["y"],
+                    "button": event.get("button", "left"),
+                    "clickCount": event.get("clickCount", 1)
+                })
+            elif event_type == "mouseWheel":
+                await self.cdp_session.send("Input.dispatchMouseEvent", {
+                    "type": "mouseWheel",
+                    "x": event.get("x", 0),
+                    "y": event.get("y", 0),
+                    "deltaX": event.get("deltaX", 0),
+                    "deltaY": event.get("deltaY", 300)
+                })
+            elif event_type in ("keyDown", "keyUp"):
+                params = {
+                    "type": event_type,
+                    "key": event.get("key", ""),
+                    "code": event.get("code", ""),
+                    "text": event.get("text", ""),
+                }
+                key_code = event.get("keyCode", 0)
+                if key_code:
+                    params["windowsVirtualKeyCode"] = key_code
+                    params["nativeVirtualKeyCode"] = key_code
+                await self.cdp_session.send("Input.dispatchKeyEvent", params)
+        except Exception:
+            pass  # CDP call may fail during navigation — safe to ignore
 
     async def add_websocket(self, ws):
         self.websockets.add(ws)

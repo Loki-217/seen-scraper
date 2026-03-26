@@ -79,6 +79,7 @@ class ActionType(str, Enum):
     WAIT = "wait"
     HOVER = "hover"
     SELECT = "select"
+    NAVIGATE = "navigate"
 
 
 class Action(BaseModel):
@@ -88,6 +89,7 @@ class Action(BaseModel):
     value: Optional[str] = None  # input 的值
     x: Optional[int] = None      # 点击坐标
     y: Optional[int] = None
+    url: Optional[str] = None    # navigate 的目标 URL
     delay_ms: int = Field(500, description="操作后延迟(毫秒)")
 
 

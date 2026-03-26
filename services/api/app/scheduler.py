@@ -82,7 +82,6 @@ class Scheduler:
     async def _check_and_execute(self):
         """检查并执行到期的任务"""
         now = get_local_now()
-        print(f"[Scheduler] 检查任务... 当前时间: {now}")
 
         with session_scope() as s:
             # 查询所有到期的调度
@@ -93,9 +92,6 @@ class Scheduler:
                 )
             )
             due_schedules = s.execute(stmt).scalars().all()
-
-            if due_schedules:
-                print(f"[Scheduler] 发现 {len(due_schedules)} 个到期任务")
 
             for schedule_db in due_schedules:
                 # 跳过正在执行的
@@ -270,7 +266,8 @@ class Scheduler:
             try:
                 result_file = await save_results_to_file(
                     result.items,
-                    robot.name
+                    robot.name,
+                    robot_id=robot.id,
                 )
             except Exception as e:
                 print(f"[Scheduler] 保存结果失败: {e}")

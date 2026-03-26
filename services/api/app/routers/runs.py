@@ -41,8 +41,6 @@ def _crawl_with_crawler_runner(url: str) -> str:
             os.path.dirname(os.path.dirname(__file__)), 
             'crawler_runner.py'
         )
-        print(f"[Run] 使用旧版爬虫: {runner_path}")
-        
         # 旧版只支持 URL
         result = subprocess.run(
             [sys.executable, runner_path, url],
@@ -51,7 +49,6 @@ def _crawl_with_crawler_runner(url: str) -> str:
         )
     else:
         # 新版支持配置
-        print(f"[Run] 使用新版爬虫: {runner_path}")
         params = json.dumps({
             "url": url,
             "config": {
@@ -69,7 +66,6 @@ def _crawl_with_crawler_runner(url: str) -> str:
     
     if result.returncode != 0:
         error_msg = result.stderr.decode('utf-8', errors='ignore')
-        print(f"[Run] 爬虫错误: {error_msg}")
         raise Exception(f"爬虫失败: {error_msg[:200]}")
     
     # 解析输出
@@ -84,7 +80,6 @@ def _crawl_with_crawler_runner(url: str) -> str:
     try:
         data = json.loads(output_text)
     except json.JSONDecodeError as e:
-        print(f"[Run] JSON 解析错误: {e}")
         raise Exception(f"JSON 解析失败: {str(e)}")
     
     if not data.get('success'):
@@ -105,13 +100,9 @@ def _execute_run(run_id: int, job_id: int, url: str, limit: int) -> None:
 
         rows, pages = 0, 1
         try:
-            print(f"[Run] 开始采集: {url}")
-            
             # 🔥 使用 Crawl4AI 爬取（支持 JavaScript 渲染）
             html = _crawl_with_crawler_runner(url)
-            
-            print(f"[Run] 爬取成功，HTML 长度: {len(html)}")
-            
+
             soup = BeautifulSoup(html, "lxml")
 
             # 提取数据
@@ -120,10 +111,7 @@ def _execute_run(run_id: int, job_id: int, url: str, limit: int) -> None:
                 attr = (sel.attr or "text").lower()
                 maxn = sel.limit or limit
                 
-                print(f"[Run] 提取字段: {sel.name}, 选择器: {css}, 属性: {attr}")
-                
                 elements = soup.select(css)
-                print(f"[Run] 找到 {len(elements)} 个元素")
                 
                 for idx, el in enumerate(elements[: min(maxn, limit)]):
                     if attr == "text":
@@ -135,13 +123,9 @@ def _execute_run(run_id: int, job_id: int, url: str, limit: int) -> None:
                         crud.add_result(s, run_id, sel.name, idx, val, url)
                         rows += 1
 
-            print(f"[Run] 采集完成，共 {rows} 条数据")
             crud.finish_run(s, run_id, status="succeeded", stats={"rows": rows, "pages": pages})
             
         except Exception as e:
-            print(f"[Run] 采集失败: {e}")
-            import traceback
-            traceback.print_exc()
             crud.finish_run(s, run_id, status="failed", stats={"error": str(e)})
 
 

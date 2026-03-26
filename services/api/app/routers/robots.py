@@ -185,9 +185,6 @@ def create_robot(req: CreateRobotRequest):
             fields_json=json.dumps(req.fields, ensure_ascii=False) if req.fields else None,
             pagination_json=json.dumps(req.pagination, ensure_ascii=False) if req.pagination else None,
         )
-        print(f"[DEBUG] create_robot item_selector: {req.item_selector}")
-        print(f"[DEBUG] create_robot fields: {req.fields}")
-        print(f"[DEBUG] create_robot pagination: {req.pagination}")
         s.add(robot_db)
         s.commit()
         s.refresh(robot_db)
@@ -280,7 +277,7 @@ async def run_robot(robot_id: str):
     result_file = None
     if result.success and result.items:
         try:
-            result_file = await save_results_to_file(result.items, robot.name)
+            result_file = await save_results_to_file(result.items, robot.name, robot_id=robot.id)
         except Exception as e:
             print(f"[Robot] 保存结果失败: {e}")
 

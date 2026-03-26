@@ -73,7 +73,6 @@ class AIService:
             }
         except Exception as e:
             # AI 调用失败，降级到规则结果
-            print(f"[AI] Error: {e}, fallback to rule")
             return {
                 "success": True,
                 **rule_result,
@@ -173,9 +172,6 @@ class AIService:
             'max_tokens': 200
         }
         
-        print(f"[AI] Calling DeepSeek API...")
-        print(f"[AI] Endpoint: {self.endpoint_id}")
-        
         with httpx.Client(timeout=10.0) as client:
             response = client.post(
                 f'{self.api_base}/chat/completions',
@@ -183,14 +179,11 @@ class AIService:
                 json=payload
             )
             
-            print(f"[AI] Response status: {response.status_code}")
             response.raise_for_status()
             
             data = response.json()
             content = data['choices'][0]['message']['content'].strip()
-            
-            print(f"[AI] Response: {content}")
-            
+
             result = self._parse_ai_response(content)
             return result
     
@@ -251,9 +244,9 @@ class AIService:
                     'confidence': min(confidence, 0.95),
                     'reasoning': 'AI 分析'
                 }
-        except Exception as e:
-            print(f"[AI] Parse error: {e}, content: {content}")
-        
+        except Exception:
+            pass
+
         # 解析失败，返回默认值
         return {
             'fieldName': '字段',

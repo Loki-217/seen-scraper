@@ -29,6 +29,8 @@ class BrowserCanvas {
         this.interactionMode = 'navigate';  // 'navigate' | 'capture_list' | 'capture_text'
         this.isLoading = false;
         this.scale = 1;
+        this._isTyping = false;          // Whether user is currently typing in an input
+        this._typingPending = false;     // Whether a finishTyping is needed before next click
         this._frameCount = 0;
         this._lastFrameTime = 0;
         this._fps = 0;
@@ -83,11 +85,13 @@ class BrowserCanvas {
         // Interaction layer (captures mouse/keyboard events)
         this.interactionLayer = document.createElement('div');
         this.interactionLayer.className = 'browser-interaction';
+        this.interactionLayer.setAttribute('tabindex', '0');
         this.interactionLayer.style.cssText = `
             position: absolute;
             top: 0;
             left: 0;
             cursor: default;
+            outline: none;
         `;
 
         // Tooltip
@@ -165,6 +169,54 @@ class BrowserCanvas {
             if (e.key === 'Escape') {
                 this.clearSelection();
             }
+        });
+
+        // Keyboard events → forward to remote browser in navigate mode
+        this.interactionLayer.addEventListener('keydown', (e) => {
+            if (this.interactionMode !== 'navigate') return;
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+            // Preserve browser dev shortcuts
+            if (['F5', 'F12'].includes(e.key)) return;
+            e.preventDefault();
+
+            this.ws.send(JSON.stringify({
+                type: 'keyDown',
+                key: e.key,
+                code: e.code,
+                text: e.key.length === 1 ? e.key : '',
+                keyCode: e.keyCode || 0
+            }));
+
+            // Track typing state: printable chars or Backspace in an input
+            if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') {
+                this._isTyping = true;
+                this._typingPending = true;
+            }
+
+            // Enter ends typing (form submit)
+            if (e.key === 'Enter' && this._typingPending) {
+                this._finishTyping();
+            }
+
+            // Tab ends typing on current field (focus moves to next)
+            if (e.key === 'Tab' && this._typingPending) {
+                this._finishTyping();
+            }
+        });
+
+        this.interactionLayer.addEventListener('keyup', (e) => {
+            if (this.interactionMode !== 'navigate') return;
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+            if (['F5', 'F12'].includes(e.key)) return;
+            e.preventDefault();
+
+            this.ws.send(JSON.stringify({
+                type: 'keyUp',
+                key: e.key,
+                code: e.code,
+                keyCode: e.keyCode || 0
+            }));
         });
 
         // Update overlay/interaction layer size when frame loads
@@ -251,10 +303,19 @@ class BrowserCanvas {
         }
     }
 
-    _handleClick(e) {
+    async _handleClick(e) {
         // ---------- navigate mode: send real click to browser ----------
         if (this.interactionMode === 'navigate') {
             if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+            // Ensure interactionLayer keeps keyboard focus
+            this.interactionLayer.focus();
+
+            // If user was typing, await the input step before recording the click
+            if (this._typingPending) {
+                await this._finishTyping();
+            }
+
             const { x, y } = this._getCoords(e);
             this.ws.send(JSON.stringify({ type: 'mousePressed', x, y, button: 'left', clickCount: 1 }));
             this.ws.send(JSON.stringify({ type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }));
@@ -312,6 +373,43 @@ class BrowserCanvas {
             this.selectedElements.splice(index, 1);
             this._renderOverlay();
         }
+    }
+
+    _finishTyping() {
+        if (!this._typingPending) return Promise.resolve();
+        this._typingPending = false;
+        this._isTyping = false;
+
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return Promise.resolve();
+
+        return new Promise((resolve) => {
+            const handler = (event) => {
+                const msg = JSON.parse(event.data);
+                if (msg.type !== 'activeInputValue') return;
+                this.ws.removeEventListener('message', handler);
+                clearTimeout(timeout);
+
+                if (msg.value && msg.selector) {
+                    this.container.dispatchEvent(new CustomEvent('navigateInput', {
+                        detail: {
+                            action: 'input',
+                            selector: msg.selector,
+                            value: msg.value
+                        }
+                    }));
+                }
+                resolve();
+            };
+            this.ws.addEventListener('message', handler);
+
+            // Timeout: resolve even if no response within 2s
+            const timeout = setTimeout(() => {
+                this.ws?.removeEventListener('message', handler);
+                resolve();
+            }, 2000);
+
+            this.ws.send(JSON.stringify({ type: 'getActiveInputValue' }));
+        });
     }
 
     _handleWheel(e) {
@@ -428,7 +526,6 @@ class BrowserCanvas {
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
-            console.log('[BrowserCanvas] WebSocket connected');
             this._reconnectAttempts = 0;
             // Request initial elements
             this.requestElements();
@@ -485,7 +582,6 @@ class BrowserCanvas {
         };
 
         this.ws.onclose = () => {
-            console.log('[BrowserCanvas] WebSocket disconnected');
             if (!this._intentionalClose && this.sessionId) {
                 this._attemptReconnect();
             }
@@ -512,7 +608,6 @@ class BrowserCanvas {
         }
         this._reconnectAttempts++;
         const attempt = this._reconnectAttempts;
-        console.log(`[BrowserCanvas] Reconnecting (${attempt}/${this._maxReconnectAttempts})...`);
         this.container.dispatchEvent(new CustomEvent('reconnecting', {
             detail: { attempt, max: this._maxReconnectAttempts }
         }));
@@ -530,6 +625,12 @@ class BrowserCanvas {
     setMode(mode) {
         if (this.interactionMode === mode) return;
         const prev = this.interactionMode;
+
+        // Flush any pending input before leaving navigate mode
+        if (prev === 'navigate' && this._typingPending) {
+            this._finishTyping();
+        }
+
         this.interactionMode = mode;
 
         // Clear highlight state on mode switch

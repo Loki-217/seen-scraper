@@ -343,93 +343,119 @@ async def websocket_screencast(websocket: WebSocket, session_id: str):
             data = await websocket.receive_json()
             event_type = data.get("type")
 
-            # Mouse and keyboard events → inject into browser
-            if event_type in ("mousePressed", "mouseReleased", "mouseMoved", "mouseWheel", "keyDown", "keyUp"):
-                await session.inject_input(data)
+            try:
+                # Mouse and keyboard events → inject into browser
+                if event_type in ("mousePressed", "mouseReleased", "mouseMoved", "mouseWheel", "keyDown", "keyUp"):
+                    await session.inject_input(data)
 
-            # Request element list
-            elif event_type == "getElements":
-                elements = await session.get_elements()
-                await websocket.send_json({
-                    "type": "elements",
-                    "elements": [el.dict() for el in elements]
-                })
-
-            # Smart analysis
-            elif event_type == "analyze":
-                from ..services.list_detector import ListDetector
-                from ..services.pagination_detector import PaginationDetector as PgDetector
-                detector = ListDetector()
-                lists = await detector.detect_lists(session.page)
-                pg_detector = PgDetector()
-                pg_results = await pg_detector.detect(session.page)
-                await websocket.send_json({
-                    "type": "analyzeResult",
-                    "lists": [lst.dict() for lst in lists],
-                    "pagination": [p.dict() for p in pg_results]
-                })
-
-            # Inject/remove list detection script on mode change
-            elif event_type == "setMode":
-                mode = data.get("mode", "navigate")
-                if mode == "capture_list":
-                    await session.inject_list_detection_script()
-                else:
-                    await session.remove_list_detection_script()
-
-            # Confirm list selection in capture_list mode
-            elif event_type == "confirmListSelection":
-                detected = await session.get_detected_list()
-                print(f"[DEBUG] detected list keys: {list(detected.keys()) if detected else 'None'}")
-                print(f"[DEBUG] rawItemData present in detected: {'rawItemData' in detected if detected else 'N/A'}")
-                if detected and detected.get("rawItemData"):
-                    rid = detected["rawItemData"]
-                    print(f"[DEBUG] rawItemData texts={len(rid.get('texts',[]))} links={len(rid.get('links',[]))} images={len(rid.get('images',[]))}")
-                if detected and detected.get("itemCount", 0) >= 2:
-                    msg = {
-                        "type": "listCaptured",
-                        "containerSelector": detected.get("containerSelector", ""),
-                        "itemSelector": detected.get("itemSelector", ""),
-                        "itemCount": detected.get("itemCount", 0),
-                        "sampleItems": detected.get("sampleItems", []),
-                        "detectedFields": detected.get("detectedFields", []),
-                        "rawItemData": detected.get("rawItemData", None)
-                    }
-                    print(f"[DEBUG] listCaptured message keys: {list(msg.keys())}")
-                    print(f"[DEBUG] rawItemData in message: {msg.get('rawItemData') is not None}")
-                    await websocket.send_json(msg)
-                else:
+                # Request element list
+                elif event_type == "getElements":
+                    elements = await session.get_elements()
                     await websocket.send_json({
-                        "type": "listCaptured",
-                        "containerSelector": "",
-                        "itemSelector": "",
-                        "itemCount": 0,
-                        "sampleItems": [],
-                        "error": "No list detected at current position. Hover over a list item first."
+                        "type": "elements",
+                        "elements": [el.dict() for el in elements]
                     })
 
-            # Find similar elements
-            elif event_type == "findSimilar":
-                selector = data.get("selector", "")
-                result = await session.page.evaluate('''(selector) => {
-                    try {
-                        const els = document.querySelectorAll(selector);
-                        return Array.from(els).map(el => {
-                            const rect = el.getBoundingClientRect();
-                            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-                        });
-                    } catch(e) { return []; }
-                }''', selector)
-                await websocket.send_json({
-                    "type": "similarElements",
-                    "selector": selector,
-                    "rects": result,
-                    "count": len(result)
-                })
+                # Smart analysis
+                elif event_type == "analyze":
+                    from ..services.list_detector import ListDetector
+                    from ..services.pagination_detector import PaginationDetector as PgDetector
+                    detector = ListDetector()
+                    lists = await detector.detect_lists(session.page)
+                    pg_detector = PgDetector()
+                    pg_results = await pg_detector.detect(session.page)
+                    await websocket.send_json({
+                        "type": "analyzeResult",
+                        "lists": [lst.dict() for lst in lists],
+                        "pagination": [p.dict() for p in pg_results]
+                    })
+
+                # Inject/remove list detection script on mode change
+                elif event_type == "setMode":
+                    mode = data.get("mode", "navigate")
+                    if mode == "capture_list":
+                        await session.inject_list_detection_script()
+                    else:
+                        await session.remove_list_detection_script()
+
+                # Confirm list selection in capture_list mode
+                elif event_type == "confirmListSelection":
+                    detected = await session.get_detected_list()
+                    if detected and detected.get("itemCount", 0) >= 2:
+                        msg = {
+                            "type": "listCaptured",
+                            "containerSelector": detected.get("containerSelector", ""),
+                            "itemSelector": detected.get("itemSelector", ""),
+                            "itemCount": detected.get("itemCount", 0),
+                            "sampleItems": detected.get("sampleItems", []),
+                            "detectedFields": detected.get("detectedFields", []),
+                            "rawItemData": detected.get("rawItemData", None)
+                        }
+                        await websocket.send_json(msg)
+                    else:
+                        await websocket.send_json({
+                            "type": "listCaptured",
+                            "containerSelector": "",
+                            "itemSelector": "",
+                            "itemCount": 0,
+                            "sampleItems": [],
+                            "error": "No list detected at current position. Hover over a list item first."
+                        })
+
+                # Get active input element's value and selector (for INPUT step recording)
+                elif event_type == "getActiveInputValue":
+                    result = await session.page.evaluate('''() => {
+                        const el = document.activeElement;
+                        if (!el || !['INPUT', 'TEXTAREA'].includes(el.tagName)) return null;
+                        // Build a CSS selector for the element
+                        let selector = el.tagName.toLowerCase();
+                        if (el.id) {
+                            selector = '#' + el.id;
+                        } else if (el.name) {
+                            selector += '[name="' + el.name + '"]';
+                        } else if (el.type) {
+                            selector += '[type="' + el.type + '"]';
+                        }
+                        return { value: el.value || '', selector: selector };
+                    }''')
+                    await websocket.send_json({
+                        "type": "activeInputValue",
+                        "selector": result["selector"] if result else "",
+                        "value": result["value"] if result else ""
+                    })
+
+                # Find similar elements
+                elif event_type == "findSimilar":
+                    selector = data.get("selector", "")
+                    result = await session.page.evaluate('''(selector) => {
+                        try {
+                            const els = document.querySelectorAll(selector);
+                            return Array.from(els).map(el => {
+                                const rect = el.getBoundingClientRect();
+                                return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                            });
+                        } catch(e) { return []; }
+                    }''', selector)
+                    await websocket.send_json({
+                        "type": "similarElements",
+                        "selector": selector,
+                        "rects": result,
+                        "count": len(result)
+                    })
+
+            except Exception as e:
+                # Per-message error: log and continue, don't kill the WebSocket loop
+                error_msg = str(e)
+                if "Execution context was destroyed" in error_msg or "navigation" in error_msg.lower():
+                    # Page is navigating — silently skip this message
+                    pass
+                else:
+                    print(f"[WebSocket] Error handling '{event_type}': {error_msg}")
+                continue
 
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"[WebSocket] Error: {e}")
+        print(f"[WebSocket] Fatal error: {e}")
     finally:
         await session.remove_websocket(websocket)

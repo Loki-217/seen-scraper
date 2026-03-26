@@ -69,12 +69,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         "type": type(exc).__name__,
         "traceback": traceback.format_exc()
     }
-    print(f"\n{'='*60}")
-    print(f"捕获到异常 - {request.method} {request.url.path}")
-    print(f"错误类型: {type(exc).__name__}")
-    print(f"错误信息: {exc}")
-    print(f"完整堆栈:\n{traceback.format_exc()}")
-    print("="*60)
     return JSONResponse(
         status_code=500,
         content=error_detail

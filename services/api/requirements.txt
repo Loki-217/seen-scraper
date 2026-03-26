@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+websockets
+playwright
+sqlalchemy
+pydantic
+pydantic-settings
+httpx
+croniter
+beautifulsoup4
