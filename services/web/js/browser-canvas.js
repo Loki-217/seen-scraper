@@ -12,7 +12,7 @@
  * Wheel events are always forwarded to the remote browser.
  */
 
-const API_BASE = 'http://127.0.0.1:8000';
+const API_BASE = '';
 
 class BrowserCanvas {
     constructor(containerId) {
@@ -522,7 +522,8 @@ class BrowserCanvas {
     // ---------- WebSocket ----------
 
     _connectWebSocket() {
-        const wsUrl = `ws://127.0.0.1:8000/sessions/ws/${this.sessionId}`;
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/sessions/ws/${this.sessionId}`;
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {

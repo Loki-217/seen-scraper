@@ -182,7 +182,9 @@ def export_run_results(run_id: int, format: str = Query(default="csv")):
         row_idx = getattr(r, "row_idx", None) or getattr(r, "row", 0)
         value = getattr(r, "value", None) or getattr(r, "text", "")
         url = getattr(r, "url", "")
-        lines.append(f'{selector},{row_idx},"{value.replace("\"","\"\"")}","{url.replace("\"","\"\"")}"')
+        escaped_value = value.replace('"', '""')
+        escaped_url = url.replace('"', '""')
+        lines.append(f'{selector},{row_idx},"{escaped_value}","{escaped_url}"')
 
     return Response(
         content="\n".join(lines),
