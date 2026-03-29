@@ -16,12 +16,13 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from ..auth import get_current_user
 from ..db import session_scope
-from ..models import RobotDB
+from ..models import RobotDB, UserDB
 from ..models_v2.schedule import (
     Robot,
     Action,
@@ -148,21 +149,33 @@ def db_to_robot(robot_db: RobotDB) -> Robot:
     )
 
 
+# ============ 归属检查 ============
+
+def _check_ownership(robot_db: RobotDB, current_user: UserDB):
+    """管理员跳过检查；其他用户只能访问自己的资源（用 404 避免暴露存在性）"""
+    if current_user.role == "admin":
+        return
+    if robot_db.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Robot 不存在: {robot_db.id}")
+
+
 # ============ API 端点 ============
 
 @router.get("", response_model=RobotListResponse, summary="列出所有 Robot")
 def list_robots(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    current_user: UserDB = Depends(get_current_user),
 ):
     """获取 Robot 列表"""
     with session_scope() as s:
-        # 统计总数
-        total_stmt = select(RobotDB)
-        total = len(s.execute(total_stmt).scalars().all())
+        base = select(RobotDB)
+        if current_user.role != "admin":
+            base = base.where(RobotDB.user_id == current_user.id)
 
-        # 分页查询
-        stmt = select(RobotDB).offset(offset).limit(limit).order_by(RobotDB.updated_at.desc())
+        total = len(s.execute(base).scalars().all())
+
+        stmt = base.offset(offset).limit(limit).order_by(RobotDB.updated_at.desc())
         robots = s.execute(stmt).scalars().all()
 
         return RobotListResponse(
@@ -172,7 +185,7 @@ def list_robots(
 
 
 @router.post("", response_model=RobotResponse, status_code=status.HTTP_201_CREATED, summary="创建 Robot")
-def create_robot(req: CreateRobotRequest):
+def create_robot(req: CreateRobotRequest, current_user: UserDB = Depends(get_current_user)):
     """创建新的 Robot"""
     with session_scope() as s:
         robot_db = RobotDB(
@@ -184,6 +197,7 @@ def create_robot(req: CreateRobotRequest):
             item_selector=req.item_selector,
             fields_json=json.dumps(req.fields, ensure_ascii=False) if req.fields else None,
             pagination_json=json.dumps(req.pagination, ensure_ascii=False) if req.pagination else None,
+            user_id=current_user.id,
         )
         s.add(robot_db)
         s.commit()
@@ -193,30 +207,25 @@ def create_robot(req: CreateRobotRequest):
 
 
 @router.get("/{robot_id}", response_model=RobotResponse, summary="获取 Robot 详情")
-def get_robot(robot_id: str):
+def get_robot(robot_id: str, current_user: UserDB = Depends(get_current_user)):
     """获取 Robot 详情"""
     with session_scope() as s:
         robot_db = s.get(RobotDB, robot_id)
         if not robot_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Robot 不存在: {robot_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Robot 不存在: {robot_id}")
+        _check_ownership(robot_db, current_user)
         return db_to_response(robot_db)
 
 
 @router.put("/{robot_id}", response_model=RobotResponse, summary="更新 Robot")
-def update_robot(robot_id: str, req: UpdateRobotRequest):
+def update_robot(robot_id: str, req: UpdateRobotRequest, current_user: UserDB = Depends(get_current_user)):
     """更新 Robot 配置"""
     with session_scope() as s:
         robot_db = s.get(RobotDB, robot_id)
         if not robot_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Robot 不存在: {robot_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Robot 不存在: {robot_id}")
+        _check_ownership(robot_db, current_user)
 
-        # 更新字段
         if req.name is not None:
             robot_db.name = req.name
         if req.description is not None:
@@ -240,15 +249,13 @@ def update_robot(robot_id: str, req: UpdateRobotRequest):
 
 
 @router.delete("/{robot_id}", summary="删除 Robot")
-def delete_robot(robot_id: str):
+def delete_robot(robot_id: str, current_user: UserDB = Depends(get_current_user)):
     """删除 Robot"""
     with session_scope() as s:
         robot_db = s.get(RobotDB, robot_id)
         if not robot_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Robot 不存在: {robot_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Robot 不存在: {robot_id}")
+        _check_ownership(robot_db, current_user)
 
         s.delete(robot_db)
         s.commit()
@@ -257,23 +264,18 @@ def delete_robot(robot_id: str):
 
 
 @router.post("/{robot_id}/run", response_model=RunRobotResponse, summary="立即执行 Robot")
-async def run_robot(robot_id: str):
+async def run_robot(robot_id: str, current_user: UserDB = Depends(get_current_user)):
     """立即执行 Robot（不通过调度）"""
     with session_scope() as s:
         robot_db = s.get(RobotDB, robot_id)
         if not robot_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Robot 不存在: {robot_id}"
-            )
-
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Robot 不存在: {robot_id}")
+        _check_ownership(robot_db, current_user)
         robot = db_to_robot(robot_db)
 
-    # 执行
     executor = RobotExecutor(robot)
     result = await executor.execute()
 
-    # 保存结果
     result_file = None
     if result.success and result.items:
         try:
@@ -281,7 +283,6 @@ async def run_robot(robot_id: str):
         except Exception as e:
             print(f"[Robot] 保存结果失败: {e}")
 
-    # 更新统计
     with session_scope() as s:
         robot_db = s.get(RobotDB, robot_id)
         if robot_db:

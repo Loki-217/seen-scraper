@@ -12,7 +12,7 @@
 import json
 import re
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
@@ -27,6 +27,8 @@ from ..models_v2.smart import (
 from ..services.list_detector import ListDetector
 from ..services.pagination_detector import PaginationDetector
 from ..ai_service import ai_service
+from ..auth import get_current_user
+from ..models import UserDB
 
 
 router = APIRouter(prefix="/smart", tags=["smart"])
@@ -99,7 +101,7 @@ class ValidateSelectorRequest(BaseModel):
 
 
 @router.post("/analyze", response_model=SmartAnalyzeResponse, summary="智能分析页面")
-async def analyze_page(req: AnalyzeRequest):
+async def analyze_page(req: AnalyzeRequest, _user: UserDB = Depends(get_current_user)):
     """
     智能分析页面结构
 
@@ -193,7 +195,7 @@ async def analyze_page(req: AnalyzeRequest):
 
 
 @router.post("/validate-selector", response_model=ValidateSelectorResponse, summary="验证选择器")
-async def validate_selector(req: ValidateSelectorRequest):
+async def validate_selector(req: ValidateSelectorRequest, _user: UserDB = Depends(get_current_user)):
     """
     验证 CSS 选择器是否有效
 
@@ -242,7 +244,7 @@ async def validate_selector(req: ValidateSelectorRequest):
 
 
 @router.post("/detect-lists", summary="仅检测列表")
-async def detect_lists(req: AnalyzeRequest):
+async def detect_lists(req: AnalyzeRequest, _user: UserDB = Depends(get_current_user)):
     """
     仅检测页面中的列表结构
 
@@ -275,7 +277,7 @@ async def detect_lists(req: AnalyzeRequest):
 
 
 @router.post("/extract-preview", summary="预览数据提取")
-async def extract_preview(session_id: str, config: Dict[str, Any]):
+async def extract_preview(session_id: str, config: Dict[str, Any], _user: UserDB = Depends(get_current_user)):
     """
     根据配置预览数据提取结果
 
@@ -558,7 +560,7 @@ def _fallback_fields_from_raw(raw: Dict[str, Any]) -> List[AnalyzedField]:
 
 
 @router.post("/analyze-fields", response_model=AnalyzeFieldsResponse, summary="AI 智能分析字段")
-async def analyze_fields(req: RawItemDataRequest):
+async def analyze_fields(req: RawItemDataRequest, _user: UserDB = Depends(get_current_user)):
     """
     使用 AI 分析列表项的原始数据，智能生成字段配置。
 

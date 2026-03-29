@@ -18,12 +18,13 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, and_, func
 
+from ..auth import get_current_user
 from ..db import session_scope
-from ..models import RobotDB, ScheduleDB, ScheduledRunDB
+from ..models import RobotDB, ScheduleDB, ScheduledRunDB, UserDB
 from ..models_v2.schedule import (
     ScheduleFrequency,
     RunStatus,
@@ -84,6 +85,15 @@ def db_to_run_response(run_db: ScheduledRunDB) -> RunResponse:
     )
 
 
+# ============ 归属检查 ============
+
+def _check_schedule_ownership(schedule_db: ScheduleDB, current_user: UserDB):
+    if current_user.role == "admin":
+        return
+    if schedule_db.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"调度不存在: {schedule_db.id}")
+
+
 # ============ Schedule API 端点 ============
 
 @router.get("", response_model=ScheduleListResponse, summary="列出所有调度")
@@ -92,11 +102,14 @@ def list_schedules(
     offset: int = Query(0, ge=0),
     robot_id: Optional[str] = Query(None, description="按 Robot 筛选"),
     enabled: Optional[bool] = Query(None, description="按启用状态筛选"),
+    current_user: UserDB = Depends(get_current_user),
 ):
     """获取调度列表"""
     with session_scope() as s:
         # 构建查询条件
         conditions = []
+        if current_user.role != "admin":
+            conditions.append(ScheduleDB.user_id == current_user.id)
         if robot_id:
             conditions.append(ScheduleDB.robot_id == robot_id)
         if enabled is not None:
@@ -136,16 +149,15 @@ def list_schedules(
 
 
 @router.post("", response_model=ScheduleResponse, status_code=status.HTTP_201_CREATED, summary="创建调度")
-def create_schedule(req: CreateScheduleRequest):
+def create_schedule(req: CreateScheduleRequest, current_user: UserDB = Depends(get_current_user)):
     """创建新的定时任务"""
     with session_scope() as s:
-        # 检查 Robot 是否存在
+        # 检查 Robot 是否存在且属于当前用户
         robot_db = s.get(RobotDB, req.robot_id)
         if not robot_db:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Robot 不存在: {req.robot_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Robot 不存在: {req.robot_id}")
+        if current_user.role != "admin" and robot_db.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Robot 不存在: {req.robot_id}")
 
         # 验证 cron 表达式
         if req.frequency == ScheduleFrequency.CUSTOM:
@@ -178,6 +190,7 @@ def create_schedule(req: CreateScheduleRequest):
             enabled=req.enabled,
             retry_count=req.retry_count,
             retry_delay_seconds=req.retry_delay_seconds,
+            user_id=current_user.id,
         )
 
         # 计算下次执行时间
@@ -191,15 +204,13 @@ def create_schedule(req: CreateScheduleRequest):
 
 
 @router.get("/{schedule_id}", response_model=ScheduleResponse, summary="获取调度详情")
-def get_schedule(schedule_id: str):
+def get_schedule(schedule_id: str, current_user: UserDB = Depends(get_current_user)):
     """获取调度详情（包含最近10次执行记录）"""
     with session_scope() as s:
         schedule_db = s.get(ScheduleDB, schedule_id)
         if not schedule_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"调度不存在: {schedule_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"调度不存在: {schedule_id}")
+        _check_schedule_ownership(schedule_db, current_user)
 
         robot_db = s.get(RobotDB, schedule_db.robot_id)
         robot_name = robot_db.name if robot_db else None
@@ -218,15 +229,13 @@ def get_schedule(schedule_id: str):
 
 
 @router.put("/{schedule_id}", response_model=ScheduleResponse, summary="更新调度")
-def update_schedule(schedule_id: str, req: UpdateScheduleRequest):
+def update_schedule(schedule_id: str, req: UpdateScheduleRequest, current_user: UserDB = Depends(get_current_user)):
     """更新调度配置"""
     with session_scope() as s:
         schedule_db = s.get(ScheduleDB, schedule_id)
         if not schedule_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"调度不存在: {schedule_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"调度不存在: {schedule_id}")
+        _check_schedule_ownership(schedule_db, current_user)
 
         # 更新字段
         if req.name is not None:
@@ -260,15 +269,13 @@ def update_schedule(schedule_id: str, req: UpdateScheduleRequest):
 
 
 @router.delete("/{schedule_id}", summary="删除调度")
-def delete_schedule(schedule_id: str):
+def delete_schedule(schedule_id: str, current_user: UserDB = Depends(get_current_user)):
     """删除调度（保留历史执行记录）"""
     with session_scope() as s:
         schedule_db = s.get(ScheduleDB, schedule_id)
         if not schedule_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"调度不存在: {schedule_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"调度不存在: {schedule_id}")
+        _check_schedule_ownership(schedule_db, current_user)
 
         s.delete(schedule_db)
         s.commit()
@@ -277,17 +284,14 @@ def delete_schedule(schedule_id: str):
 
 
 @router.post("/{schedule_id}/run", summary="立即执行一次")
-async def run_schedule_now(schedule_id: str):
+async def run_schedule_now(schedule_id: str, current_user: UserDB = Depends(get_current_user)):
     """立即执行一次（不影响定时计划）"""
     with session_scope() as s:
         schedule_db = s.get(ScheduleDB, schedule_id)
         if not schedule_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"调度不存在: {schedule_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"调度不存在: {schedule_id}")
+        _check_schedule_ownership(schedule_db, current_user)
 
-    # 执行
     run_id = await scheduler.execute_schedule_by_id(schedule_id, trigger_type="manual")
 
     if not run_id:
@@ -305,16 +309,14 @@ def get_schedule_runs(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     status_filter: Optional[str] = Query(None, alias="status", description="按状态筛选"),
+    current_user: UserDB = Depends(get_current_user),
 ):
     """获取调度的执行历史"""
     with session_scope() as s:
-        # 检查调度是否存在
         schedule_db = s.get(ScheduleDB, schedule_id)
         if not schedule_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"调度不存在: {schedule_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"调度不存在: {schedule_id}")
+        _check_schedule_ownership(schedule_db, current_user)
 
         # 构建查询
         conditions = [ScheduledRunDB.schedule_id == schedule_id]
@@ -344,28 +346,26 @@ def get_schedule_runs(
 # ============ Run API 端点 ============
 
 @runs_router.get("/{run_id}", response_model=RunResponse, summary="获取执行详情")
-def get_run(run_id: str):
+def get_run(run_id: str, current_user: UserDB = Depends(get_current_user)):
     """获取单次执行详情"""
     with session_scope() as s:
         run_db = s.get(ScheduledRunDB, run_id)
         if not run_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"执行记录不存在: {run_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"执行记录不存在: {run_id}")
+        if current_user.role != "admin" and run_db.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"执行记录不存在: {run_id}")
         return db_to_run_response(run_db)
 
 
 @runs_router.post("/{run_id}/cancel", summary="取消执行")
-def cancel_run(run_id: str):
+def cancel_run(run_id: str, current_user: UserDB = Depends(get_current_user)):
     """取消正在执行的任务"""
     with session_scope() as s:
         run_db = s.get(ScheduledRunDB, run_id)
         if not run_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"执行记录不存在: {run_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"执行记录不存在: {run_id}")
+        if current_user.role != "admin" and run_db.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"执行记录不存在: {run_id}")
 
         if run_db.status not in [RunStatus.PENDING.value, RunStatus.RUNNING.value]:
             raise HTTPException(
@@ -381,7 +381,7 @@ def cancel_run(run_id: str):
 
 
 @runs_router.get("/{run_id}/result", summary="获取执行结果")
-def get_run_result(run_id: str):
+def get_run_result(run_id: str, current_user: UserDB = Depends(get_current_user)):
     """获取执行结果数据"""
     import json
     from pathlib import Path
@@ -389,30 +389,23 @@ def get_run_result(run_id: str):
     with session_scope() as s:
         run_db = s.get(ScheduledRunDB, run_id)
         if not run_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"执行记录不存在: {run_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"执行记录不存在: {run_id}")
+        if current_user.role != "admin" and run_db.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"执行记录不存在: {run_id}")
 
         if not run_db.result_file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="无结果文件"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="无结果文件")
 
         result_path = Path(run_db.result_file)
         if not result_path.exists():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="结果文件不存在"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="结果文件不存在")
 
         with open(result_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
 
 @runs_router.get("/{run_id}/download", summary="下载执行结果文件")
-def download_run_result(run_id: str):
+def download_run_result(run_id: str, current_user: UserDB = Depends(get_current_user)):
     """直接下载执行结果 CSV 文件"""
     from pathlib import Path
     from fastapi.responses import FileResponse
@@ -420,23 +413,16 @@ def download_run_result(run_id: str):
     with session_scope() as s:
         run_db = s.get(ScheduledRunDB, run_id)
         if not run_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"执行记录不存在: {run_id}"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"执行记录不存在: {run_id}")
+        if current_user.role != "admin" and run_db.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"执行记录不存在: {run_id}")
 
         if not run_db.result_file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="无结果文件"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="无结果文件")
 
         result_path = Path(run_db.result_file)
         if not result_path.exists():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="结果文件不存在"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="结果文件不存在")
 
         # 返回文件下载
         return FileResponse(

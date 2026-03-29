@@ -113,6 +113,9 @@ class RobotDB(Base):
     fields_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pagination_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # 归属
+    user_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+
     # 元信息
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -155,6 +158,9 @@ class ScheduleDB(Base):
 
     retry_count: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     retry_delay_seconds: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+
+    # 归属
+    user_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -219,6 +225,9 @@ class ScheduledRunDB(Base):
     result_file: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     retry_attempt: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # 归属
+    user_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     # 关联
     schedule: Mapped["ScheduleDB"] = relationship(back_populates="runs")

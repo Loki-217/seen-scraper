@@ -35,6 +35,38 @@ from .session_manager import session_manager
 from .scheduler import scheduler
 
 
+def _migrate_user_id():
+    """给旧数据补 user_id，归属给 admin。幂等操作。"""
+    from sqlalchemy import text, select
+    from .db import engine, session_scope
+    from .models import UserDB
+
+    # 确保列存在（SQLite 不支持 IF NOT EXISTS on column，用 try/except）
+    with engine.connect() as conn:
+        for table in ("robots", "schedules", "scheduled_runs"):
+            try:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN user_id VARCHAR(36)"))
+                conn.commit()
+            except Exception:
+                pass  # 列已存在
+
+    # 把 NULL 记录归属给 admin
+    with session_scope() as s:
+        admin = s.execute(
+            select(UserDB).where(UserDB.role == "admin")
+        ).scalar_one_or_none()
+        if not admin:
+            return
+
+        for table in ("robots", "schedules", "scheduled_runs"):
+            result = s.execute(
+                text(f"UPDATE {table} SET user_id = :uid WHERE user_id IS NULL"),
+                {"uid": admin.id},
+            )
+            if result.rowcount:
+                print(f"[SeenFetch] Migrated {result.rowcount} rows in {table} → user_id={admin.id[:8]}...")
+
+
 def _ensure_admin():
     """首次启动时自动创建管理员账号"""
     import uuid
@@ -67,6 +99,7 @@ async def lifespan(app: FastAPI):
     # startup
     init_db()
     _ensure_admin()
+    _migrate_user_id()
     await session_manager.start()
     print("[SeenFetch] Session Manager 已启动")
     await scheduler.start()

@@ -150,6 +150,7 @@ class Scheduler:
                 robot_id=schedule_db.robot_id,
                 status=RunStatus.PENDING.value,
                 trigger_type=trigger_type,
+                user_id=schedule_db.user_id,
             )
             s.add(run_db)
             s.commit()
