@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SeenFetch - Sign In</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
+    <link rel="stylesheet" href="css/login.css" />
+</head>
+<body>
+
+<div class="login-header">
+    <span class="brand-icon">👁️</span>
+    <div class="brand-name">SeenFetch</div>
+</div>
+
+<div class="login-card">
+    <div class="tab-row">
+        <button class="tab-btn active" id="tabLogin" onclick="switchTab('login')">Sign In</button>
+        <button class="tab-btn" id="tabRegister" onclick="switchTab('register')">Register</button>
+    </div>
+
+    <!-- Login panel -->
+    <div class="tab-panel active" id="panelLogin">
+        <div class="form-group">
+            <label class="form-label" for="loginUsername">Username</label>
+            <input class="form-input" type="text" id="loginUsername" placeholder="Enter your username" autocomplete="username" />
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="loginPassword">Password</label>
+            <input class="form-input" type="password" id="loginPassword" placeholder="Enter your password" autocomplete="current-password" />
+        </div>
+        <button class="btn-submit" id="btnLogin" onclick="handleLogin()">Sign In</button>
+        <div class="alert" id="loginAlert"></div>
+    </div>
+
+    <!-- Register panel -->
+    <div class="tab-panel" id="panelRegister">
+        <div class="form-group">
+            <label class="form-label" for="regUsername">Username</label>
+            <input class="form-input" type="text" id="regUsername" placeholder="3–30 chars, letters/numbers/underscore" autocomplete="username" />
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="regEmail">Email</label>
+            <input class="form-input" type="email" id="regEmail" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="regPassword">Password</label>
+            <input class="form-input" type="password" id="regPassword" placeholder="At least 8 characters" autocomplete="new-password" />
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="regConfirm">Confirm Password</label>
+            <input class="form-input" type="password" id="regConfirm" placeholder="Repeat password" autocomplete="new-password" />
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="regInvite">Invite Code</label>
+            <input class="form-input" type="text" id="regInvite" placeholder="Enter your invite code" />
+        </div>
+        <button class="btn-submit" id="btnRegister" onclick="handleRegister()">Create Account</button>
+        <div class="alert" id="registerAlert"></div>
+    </div>
+</div>
+
+<script>
+const API_BASE = window.location.port === '3000' ? 'http://127.0.0.1:8000' : '';
+
+// Already logged in → go home
+if (localStorage.getItem('access_token')) {
+    window.location.href = '/index.html';
+}
+
+function switchTab(tab) {
+    document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
+    document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
+    document.getElementById('panelLogin').classList.toggle('active', tab === 'login');
+    document.getElementById('panelRegister').classList.toggle('active', tab === 'register');
+}
+
+function showAlert(id, message, type) {
+    const el = document.getElementById(id);
+    el.textContent = message;
+    el.className = `alert ${type} show`;
+}
+
+function hideAlert(id) {
+    document.getElementById(id).className = 'alert';
+}
+
+async function handleLogin() {
+    const username = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginPassword').value;
+
+    if (!username || !password) {
+        showAlert('loginAlert', 'Please enter username and password.', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btnLogin');
+    btn.disabled = true;
+    btn.textContent = 'Signing in...';
+    hideAlert('loginAlert');
+
+    try {
+        const resp = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        if (resp.ok) {
+            const data = await resp.json();
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            window.location.href = '/index.html';
+        } else {
+            const err = await resp.json().catch(() => ({}));
+            showAlert('loginAlert', err.detail || 'Invalid username or password.', 'error');
+        }
+    } catch (e) {
+        showAlert('loginAlert', 'Connection error. Is the server running?', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+    }
+}
+
+async function handleRegister() {
+    const username = document.getElementById('regUsername').value.trim();
+    const email    = document.getElementById('regEmail').value.trim();
+    const password = document.getElementById('regPassword').value;
+    const confirm  = document.getElementById('regConfirm').value;
+    const invite   = document.getElementById('regInvite').value.trim();
+
+    if (!username || !email || !password || !confirm || !invite) {
+        showAlert('registerAlert', 'All fields are required.', 'error');
+        return;
+    }
+    if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+        showAlert('registerAlert', 'Username: 3–30 characters, letters/numbers/underscore only.', 'error');
+        return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showAlert('registerAlert', 'Please enter a valid email address.', 'error');
+        return;
+    }
+    if (password.length < 8) {
+        showAlert('registerAlert', 'Password must be at least 8 characters.', 'error');
+        return;
+    }
+    if (password !== confirm) {
+        showAlert('registerAlert', 'Passwords do not match.', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btnRegister');
+    btn.disabled = true;
+    btn.textContent = 'Creating account...';
+    hideAlert('registerAlert');
+
+    try {
+        const resp = await fetch(`${API_BASE}/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, email, password, invite_code: invite })
+        });
+
+        if (resp.ok) {
+            showAlert('registerAlert', 'Account created! Signing you in...', 'success');
+            // Auto-login after register
+            const loginResp = await fetch(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            if (loginResp.ok) {
+                const data = await loginResp.json();
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+                setTimeout(() => { window.location.href = '/index.html'; }, 800);
+            } else {
+                showAlert('registerAlert', 'Account created! Please sign in.', 'success');
+                setTimeout(() => switchTab('login'), 1500);
+            }
+        } else {
+            const err = await resp.json().catch(() => ({}));
+            showAlert('registerAlert', err.detail || 'Registration failed.', 'error');
+        }
+    } catch (e) {
+        showAlert('registerAlert', 'Connection error. Is the server running?', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create Account';
+    }
+}
+
+// Enter key submits active form
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (document.getElementById('panelLogin').classList.contains('active')) handleLogin();
+    else handleRegister();
+});
+</script>
+
+</body>
+</html>

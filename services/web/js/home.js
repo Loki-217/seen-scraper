@@ -1,8 +1,11 @@
-const API_BASE = window.location.port === '3000' ? 'http://127.0.0.1:8000' : '';
+// API_BASE is defined in auth.js (loaded first)
 
 let allRobots = [];
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (!requireAuth()) return;
+  renderTopbarUser();
+
   document.getElementById('btnNewRobot').addEventListener('click', () => {
     window.location.href = 'studio.html';
   });
@@ -24,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadRobots() {
   try {
-    const res = await fetch(`${API_BASE}/robots`);
+    const res = await authFetch(`${API_BASE}/robots`);
     const data = await res.json();
     allRobots = data.items || data.data || [];
     renderRobots(allRobots);

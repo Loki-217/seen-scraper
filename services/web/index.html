@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SeenFetch - Dashboard</title>
   <link rel="stylesheet" href="css/home.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
 </head>
 <body>
 
@@ -13,6 +14,10 @@
       <div class="topbar-brand">
         <span class="brand-icon">👁️</span>
         <span class="brand-text">SeenFetch</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="topbarUsername" style="color:#6b7280;font-size:13px;font-weight:500;"></span>
+        <button onclick="logout()" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;color:#374151;">Logout</button>
       </div>
     </div>
   </header>
@@ -33,6 +38,7 @@
     <div id="robotList" class="robot-list"></div>
   </main>
 
+  <script src="js/auth.js"></script>
   <script src="js/home.js"></script>
 </body>
 </html>

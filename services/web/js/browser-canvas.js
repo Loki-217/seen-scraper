@@ -12,7 +12,7 @@
  * Wheel events are always forwarded to the remote browser.
  */
 
-const API_BASE = window.location.port === '3000' ? 'http://127.0.0.1:8000' : '';
+// API_BASE is defined in auth.js (loaded first)
 
 class BrowserCanvas {
     constructor(containerId) {
@@ -677,7 +677,7 @@ class BrowserCanvas {
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs + 5000);
 
         try {
-            const response = await fetch(`${API_BASE}/sessions`, {
+            const response = await authFetch(`${API_BASE}/sessions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -756,7 +756,7 @@ class BrowserCanvas {
 
         if (this.sessionId) {
             try {
-                await fetch(`${API_BASE}/sessions/${this.sessionId}`, { method: 'DELETE' });
+                await authFetch(`${API_BASE}/sessions/${this.sessionId}`, { method: 'DELETE' });
             } catch (error) {
                 console.error('Close session failed:', error);
             }

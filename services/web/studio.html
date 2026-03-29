@@ -32,6 +32,10 @@
         <span class="status-dot"></span>
         <span class="status-text">Ready</span>
     </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <span id="topbarUsername" style="color:rgba(255,255,255,0.8);font-size:13px;font-weight:500;"></span>
+        <button onclick="logout()" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:white;">Logout</button>
+    </div>
 </header>
 
 <!-- Workspace -->
@@ -114,6 +118,7 @@
 <div id="toastContainer"></div>
 
 <!-- Scripts -->
+<script src="js/auth.js"></script>
 <script src="js/browser-canvas.js"></script>
 <script src="js/studio.js"></script>
 

@@ -3,7 +3,11 @@
  * Guide-based state machine UI
  */
 
-// API_BASE is defined in browser-canvas.js (loaded first)
+// API_BASE is defined in auth.js (loaded first)
+
+// ---------- Auth ----------
+requireAuth();
+renderTopbarUser();
 
 // ---------- Global State ----------
 
@@ -483,7 +487,7 @@ async function _analyzeFieldsWithAI(d) {
 
     try {
         const body = JSON.stringify({ rawItemData: d.rawItemData });
-        const res = await fetch(`${API_BASE}/smart/analyze-fields`, {
+        const res = await authFetch(`${API_BASE}/smart/analyze-fields`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: body
@@ -1059,7 +1063,7 @@ async function detectPagination() {
     showToast('Detecting pagination...', 'info');
 
     try {
-        const res = await fetch(`${API_BASE}/sessions/${currentSession.sessionId}/detect-pagination`, {
+        const res = await authFetch(`${API_BASE}/sessions/${currentSession.sessionId}/detect-pagination`, {
             method: 'POST'
         });
         const data = await res.json();
@@ -1143,7 +1147,7 @@ async function runPreview() {
 
     try {
         const itemSelector = configuredFields[0]?.itemSelector || smartResult?.lists?.[0]?.item_selector || '';
-        const res = await fetch(`${API_BASE}/smart/extract-preview?session_id=${currentSession.sessionId}`, {
+        const res = await authFetch(`${API_BASE}/smart/extract-preview?session_id=${currentSession.sessionId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1401,7 +1405,7 @@ async function doSaveRobot() {
             wait_ms: paginationConfig.wait_ms || 1000,
             max_rows: paginationConfig.max_rows || null
         } : null;
-        const res = await fetch(`${API_BASE}/robots`, {
+        const res = await authFetch(`${API_BASE}/robots`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1457,7 +1461,7 @@ async function runRobot(robotId) {
     showToast('Running robot...', 'info');
 
     try {
-        const res = await fetch(`${API_BASE}/robots/${robotId}/run`, { method: 'POST' });
+        const res = await authFetch(`${API_BASE}/robots/${robotId}/run`, { method: 'POST' });
         const data = await res.json();
 
         if (data.success !== false) {

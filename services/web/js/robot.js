@@ -1,4 +1,4 @@
-const API_BASE = window.location.port === '3000' ? 'http://127.0.0.1:8000' : '';
+// API_BASE is defined in auth.js (loaded first)
 
 let robotId = null;
 let robotData = null;
@@ -11,6 +11,9 @@ let monitorSchedules = [];    // cached schedule list
 // ============ Init ============
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (!requireAuth()) return;
+  renderTopbarUser();
+
   // Tab switching — bind FIRST, before any early returns
   document.querySelectorAll('.robot-tab').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -81,7 +84,7 @@ function switchTab(tabName) {
 
 async function loadRobot(autorun) {
   try {
-    const res = await fetch(`${API_BASE}/robots/${robotId}`);
+    const res = await authFetch(`${API_BASE}/robots/${robotId}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     robotData = await res.json();
   } catch (err) {
@@ -129,7 +132,7 @@ async function runTask() {
   document.getElementById('btnRun').disabled = true;
 
   try {
-    const res = await fetch(`${API_BASE}/robots/${robotId}/run`, { method: 'POST' });
+    const res = await authFetch(`${API_BASE}/robots/${robotId}/run`, { method: 'POST' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
@@ -218,7 +221,7 @@ async function saveName() {
   if (!newName || newName === robotData.name) return;
 
   try {
-    const res = await fetch(`${API_BASE}/robots/${robotId}`, {
+    const res = await authFetch(`${API_BASE}/robots/${robotId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newName }),
@@ -236,7 +239,7 @@ async function deleteRobot() {
   if (!confirm('Are you sure you want to delete this robot? This action cannot be undone.')) return;
 
   try {
-    const res = await fetch(`${API_BASE}/robots/${robotId}`, { method: 'DELETE' });
+    const res = await authFetch(`${API_BASE}/robots/${robotId}`, { method: 'DELETE' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     window.location.href = 'index.html';
   } catch (err) {
@@ -283,7 +286,7 @@ function downloadFile(format) {
 
 async function loadMonitors() {
   try {
-    const res = await fetch(`${API_BASE}/schedules?robot_id=${robotId}`);
+    const res = await authFetch(`${API_BASE}/schedules?robot_id=${robotId}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     monitorSchedules = data.items || [];
@@ -735,13 +738,13 @@ async function saveMonitor() {
     if (editingScheduleId) {
       // Update — don't send robot_id
       const { robot_id, ...updatePayload } = payload;
-      res = await fetch(`${API_BASE}/schedules/${editingScheduleId}`, {
+      res = await authFetch(`${API_BASE}/schedules/${editingScheduleId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatePayload),
       });
     } else {
-      res = await fetch(`${API_BASE}/schedules`, {
+      res = await authFetch(`${API_BASE}/schedules`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -773,7 +776,7 @@ async function toggleMonitorEnabled(id) {
   if (!schedule) return;
 
   try {
-    const res = await fetch(`${API_BASE}/schedules/${id}`, {
+    const res = await authFetch(`${API_BASE}/schedules/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: !schedule.enabled }),
@@ -792,7 +795,7 @@ async function deleteMonitor(id) {
   if (!confirm('Are you sure you want to delete this monitor?')) return;
 
   try {
-    const res = await fetch(`${API_BASE}/schedules/${id}`, { method: 'DELETE' });
+    const res = await authFetch(`${API_BASE}/schedules/${id}`, { method: 'DELETE' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     showToast('Monitor deleted.', 'success');
@@ -813,7 +816,7 @@ async function loadHistory() {
 
   try {
     // Get all schedules for this robot
-    const schedRes = await fetch(`${API_BASE}/schedules?robot_id=${robotId}`);
+    const schedRes = await authFetch(`${API_BASE}/schedules?robot_id=${robotId}`);
     if (!schedRes.ok) throw new Error(`HTTP ${schedRes.status}`);
     const schedData = await schedRes.json();
     const schedules = schedData.items || [];
@@ -829,7 +832,7 @@ async function loadHistory() {
     // Fetch runs for each schedule
     let allRuns = [];
     for (const sched of schedules) {
-      const runsRes = await fetch(`${API_BASE}/schedules/${sched.id}/runs?limit=100`);
+      const runsRes = await authFetch(`${API_BASE}/schedules/${sched.id}/runs?limit=100`);
       if (runsRes.ok) {
         const runsData = await runsRes.json();
         allRuns = allRuns.concat(runsData.items || []);
@@ -907,7 +910,7 @@ async function downloadRunResult(runId) {
 
 async function viewRunResult(runId) {
   try {
-    const res = await fetch(`${API_BASE}/runs/${runId}/result`);
+    const res = await authFetch(`${API_BASE}/runs/${runId}/result`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
