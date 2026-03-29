@@ -28,10 +28,37 @@ from .routers.browser import router as browser_router
 from .routers.smart import router as smart_router
 from .routers.robots import router as robots_router
 from .routers.schedules import router as schedules_router, runs_router as scheduled_runs_router
+from .routers.auth import router as auth_router
 
 # V2: Session Manager and Scheduler
 from .session_manager import session_manager
 from .scheduler import scheduler
+
+
+def _ensure_admin():
+    """首次启动时自动创建管理员账号"""
+    import uuid
+    from sqlalchemy import select
+    from .db import session_scope
+    from .models import UserDB
+    from .auth import hash_password
+
+    with session_scope() as s:
+        existing = s.execute(
+            select(UserDB).where(UserDB.role == "admin")
+        ).scalar_one_or_none()
+        if existing:
+            return
+
+        admin = UserDB(
+            id=str(uuid.uuid4()),
+            username=settings.admin_username,
+            email=settings.admin_email,
+            hashed_password=hash_password(settings.admin_password),
+            role="admin",
+        )
+        s.add(admin)
+    print(f"[SeenFetch] Admin account created: {settings.admin_username}")
 
 
 # ---------- App lifespan ----------
@@ -39,6 +66,7 @@ from .scheduler import scheduler
 async def lifespan(app: FastAPI):
     # startup
     init_db()
+    _ensure_admin()
     await session_manager.start()
     print("[SeenFetch] Session Manager 已启动")
     await scheduler.start()
@@ -92,6 +120,7 @@ app.include_router(smart_router)
 app.include_router(robots_router)
 app.include_router(schedules_router)
 app.include_router(scheduled_runs_router)
+app.include_router(auth_router)
 
 
 # ---------- Root ----------

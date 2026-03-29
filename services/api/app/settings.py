@@ -47,6 +47,15 @@ class Settings(BaseSettings):
         description="是否启用 AI 功能（如果 API Key 或 Endpoint ID 为空，自动禁用）"
     )
 
+    # Auth 配置
+    jwt_secret: str = Field(
+        default="change-this-secret-in-production",
+        description="JWT 签名密钥"
+    )
+    admin_username: str = Field(default="admin", description="初始管理员用户名")
+    admin_password: str = Field(default="seenfetch2026", description="初始管理员密码")
+    admin_email: str = Field(default="admin@seenfetch.com", description="初始管理员邮箱")
+
     model_config = SettingsConfigDict(
         env_prefix="SEENFETCH_",
         env_file=_find_env_file(),

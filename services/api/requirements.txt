@@ -8,3 +8,6 @@ pydantic-settings
 httpx
 croniter
 beautifulsoup4
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt==4.2.1
