@@ -524,7 +524,11 @@ class BrowserCanvas {
     _connectWebSocket() {
         const wsHost = window.location.port === '3000' ? '127.0.0.1:8000' : window.location.host;
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${wsHost}/sessions/ws/${this.sessionId}`;
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+            console.warn('[BrowserCanvas] No access token found, WebSocket connection may fail');
+        }
+        const wsUrl = `${wsProtocol}//${wsHost}/sessions/ws/${this.sessionId}${token ? '?token=' + token : ''}`;
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {

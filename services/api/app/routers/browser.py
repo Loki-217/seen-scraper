@@ -11,9 +11,11 @@ V2 Session API 路由
 - POST   /sessions/{id}/detect-pagination  检测翻页方式
 """
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from typing import Optional, List
 
+from ..auth import get_current_user, decode_token
+from ..models import UserDB
 from ..session_manager import session_manager
 from ..models_v2.actions import (
     Action,
@@ -33,7 +35,7 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 @router.post("", response_model=CreateSessionResponse, summary="创建浏览器会话")
-async def create_session(req: CreateSessionRequest):
+async def create_session(req: CreateSessionRequest, _user: UserDB = Depends(get_current_user)):
     """
     创建新的浏览器会话
 
@@ -72,7 +74,7 @@ async def create_session(req: CreateSessionRequest):
 
 
 @router.post("/{session_id}/actions", response_model=ActionResult, summary="执行操作")
-async def execute_action(session_id: str, action: Action):
+async def execute_action(session_id: str, action: Action, _user: UserDB = Depends(get_current_user)):
     """
     在指定会话中执行操作
 
@@ -121,7 +123,7 @@ async def execute_action(session_id: str, action: Action):
 
 
 @router.get("/{session_id}/state", response_model=SessionState, summary="获取会话状态")
-async def get_session_state(session_id: str):
+async def get_session_state(session_id: str, _user: UserDB = Depends(get_current_user)):
     """
     获取当前会话状态
 
@@ -141,7 +143,7 @@ async def get_session_state(session_id: str):
 
 
 @router.delete("/{session_id}", summary="关闭会话")
-async def close_session(session_id: str):
+async def close_session(session_id: str, _user: UserDB = Depends(get_current_user)):
     """
     关闭会话，释放资源
 
@@ -157,7 +159,7 @@ async def close_session(session_id: str):
 
 
 @router.get("", summary="列出所有会话")
-async def list_sessions():
+async def list_sessions(_user: UserDB = Depends(get_current_user)):
     """
     列出所有活跃会话的统计信息
 
@@ -168,7 +170,7 @@ async def list_sessions():
 
 # 额外的辅助端点
 @router.post("/{session_id}/screenshot", summary="仅获取截图")
-async def get_screenshot(session_id: str, quality: int = 80):
+async def get_screenshot(session_id: str, quality: int = 80, _user: UserDB = Depends(get_current_user)):
     """
     获取当前页面截图
 
@@ -190,7 +192,7 @@ async def get_screenshot(session_id: str, quality: int = 80):
 
 
 @router.post("/{session_id}/elements", summary="仅获取元素")
-async def get_elements(session_id: str):
+async def get_elements(session_id: str, _user: UserDB = Depends(get_current_user)):
     """
     获取当前页面可交互元素列表
     """
@@ -210,7 +212,7 @@ async def get_elements(session_id: str):
 
 
 @router.post("/{session_id}/detect-pagination", response_model=PaginationDetectResponse, summary="检测翻页方式")
-async def detect_pagination(session_id: str):
+async def detect_pagination(session_id: str, _user: UserDB = Depends(get_current_user)):
     """
     智能检测页面的翻页方式
 
@@ -266,7 +268,7 @@ async def detect_pagination(session_id: str):
 
 
 @router.post("/{session_id}/test-pagination", summary="测试翻页")
-async def test_pagination(session_id: str, config: PaginationConfig):
+async def test_pagination(session_id: str, config: PaginationConfig, _user: UserDB = Depends(get_current_user)):
     """
     测试翻页配置是否有效
 
@@ -330,6 +332,17 @@ async def websocket_screencast(websocket: WebSocket, session_id: str):
     Client → Server: mouse/keyboard events, getElements, analyze, findSimilar
     """
     await websocket.accept()
+
+    # Token auth via query parameter (WebSocket can't use Authorization header)
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="Missing token")
+        return
+    try:
+        decode_token(token)
+    except Exception:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
 
     session = session_manager.get_session(session_id)
     if not session:
