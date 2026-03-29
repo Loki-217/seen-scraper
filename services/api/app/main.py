@@ -29,6 +29,7 @@ from .routers.smart import router as smart_router
 from .routers.robots import router as robots_router
 from .routers.schedules import router as schedules_router, runs_router as scheduled_runs_router
 from .routers.auth import router as auth_router
+from .routers.admin import router as admin_router
 
 # V2: Session Manager and Scheduler
 from .session_manager import session_manager
@@ -154,6 +155,7 @@ app.include_router(robots_router)
 app.include_router(schedules_router)
 app.include_router(scheduled_runs_router)
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 
 # ---------- Root ----------

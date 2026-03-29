@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from ..activity_log import log_activity
 from ..auth import get_current_user
 from ..db import session_scope
 from ..models import RobotDB, UserDB
@@ -203,6 +204,13 @@ def create_robot(req: CreateRobotRequest, current_user: UserDB = Depends(get_cur
         s.commit()
         s.refresh(robot_db)
 
+        log_activity(
+            "robot_create",
+            user_id=current_user.id,
+            target_type="robot",
+            target_id=robot_db.id,
+            target_url=robot_db.origin_url,
+        )
         return db_to_response(robot_db)
 
 
@@ -245,6 +253,12 @@ def update_robot(robot_id: str, req: UpdateRobotRequest, current_user: UserDB = 
         s.commit()
         s.refresh(robot_db)
 
+        log_activity(
+            "robot_update",
+            user_id=current_user.id,
+            target_type="robot",
+            target_id=robot_id,
+        )
         return db_to_response(robot_db)
 
 
@@ -257,9 +271,17 @@ def delete_robot(robot_id: str, current_user: UserDB = Depends(get_current_user)
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Robot 不存在: {robot_id}")
         _check_ownership(robot_db, current_user)
 
+        origin_url = robot_db.origin_url
         s.delete(robot_db)
         s.commit()
 
+        log_activity(
+            "robot_delete",
+            user_id=current_user.id,
+            target_type="robot",
+            target_id=robot_id,
+            target_url=origin_url,
+        )
         return {"ok": True, "message": f"Robot {robot_id} 已删除"}
 
 
@@ -273,8 +295,41 @@ async def run_robot(robot_id: str, current_user: UserDB = Depends(get_current_us
         _check_ownership(robot_db, current_user)
         robot = db_to_robot(robot_db)
 
+    log_activity(
+        "robot_run",
+        user_id=current_user.id,
+        target_type="robot",
+        target_id=robot_id,
+        target_url=robot.origin_url,
+    )
+
     executor = RobotExecutor(robot)
     result = await executor.execute()
+
+    # Log success or failure
+    if result.success:
+        log_activity(
+            "robot_run_success",
+            user_id=current_user.id,
+            target_type="robot",
+            target_id=robot_id,
+            target_url=robot.origin_url,
+            details={
+                "rows_extracted": len(result.items),
+                "pages_scraped": result.pages_scraped,
+                "duration_seconds": result.duration_seconds,
+            },
+        )
+    else:
+        log_activity(
+            "robot_run_failed",
+            user_id=current_user.id,
+            target_type="robot",
+            target_id=robot_id,
+            target_url=robot.origin_url,
+            status="failed",
+            error_message=result.error,
+        )
 
     result_file = None
     if result.success and result.items:

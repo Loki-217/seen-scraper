@@ -231,3 +231,22 @@ class ScheduledRunDB(Base):
 
     # 关联
     schedule: Mapped["ScheduleDB"] = relationship(back_populates="runs")
+
+
+# -------------------- ActivityLog --------------------
+class ActivityLogDB(Base):
+    """用户行为日志表"""
+    __tablename__ = "activity_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    action: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    target_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    target_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    target_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="success", nullable=False)
+    error_step: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)

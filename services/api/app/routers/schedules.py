@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, and_, func
 
+from ..activity_log import log_activity
 from ..auth import get_current_user
 from ..db import session_scope
 from ..models import RobotDB, ScheduleDB, ScheduledRunDB, UserDB
@@ -200,6 +201,12 @@ def create_schedule(req: CreateScheduleRequest, current_user: UserDB = Depends(g
         s.commit()
         s.refresh(schedule_db)
 
+        log_activity(
+            "schedule_create",
+            user_id=current_user.id,
+            target_type="schedule",
+            target_id=schedule_db.id,
+        )
         return db_to_schedule_response(schedule_db, robot_db.name)
 
 
@@ -265,6 +272,12 @@ def update_schedule(schedule_id: str, req: UpdateScheduleRequest, current_user: 
         robot_db = s.get(RobotDB, schedule_db.robot_id)
         robot_name = robot_db.name if robot_db else None
 
+        log_activity(
+            "schedule_update",
+            user_id=current_user.id,
+            target_type="schedule",
+            target_id=schedule_id,
+        )
         return db_to_schedule_response(schedule_db, robot_name)
 
 
@@ -280,6 +293,12 @@ def delete_schedule(schedule_id: str, current_user: UserDB = Depends(get_current
         s.delete(schedule_db)
         s.commit()
 
+        log_activity(
+            "schedule_delete",
+            user_id=current_user.id,
+            target_type="schedule",
+            target_id=schedule_id,
+        )
         return {"ok": True, "message": f"调度 {schedule_id} 已删除"}
 
 

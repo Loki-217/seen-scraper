@@ -7,9 +7,11 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+
+from ..activity_log import log_activity
 
 from ..auth import (
     hash_password,
@@ -48,7 +50,7 @@ class RefreshRequest(BaseModel):
 # ---------- POST /auth/register ----------
 
 @router.post("/register", status_code=201)
-def register(req: RegisterRequest):
+def register(req: RegisterRequest, request: Request):
     if not _USERNAME_RE.match(req.username):
         raise HTTPException(
             status_code=422,
@@ -97,19 +99,32 @@ def register(req: RegisterRequest):
         invite.used_by = user_id
         invite.used_at = datetime.utcnow()
 
+    log_activity(
+        "user_register",
+        user_id=user_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return {"user_id": user_id, "username": req.username, "message": "Registration successful"}
 
 
 # ---------- POST /auth/login ----------
 
 @router.post("/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
     with session_scope() as s:
         user = s.execute(
             select(UserDB).where(UserDB.username == req.username)
         ).scalar_one_or_none()
 
+        ip = request.client.host if request.client else None
+
         if user is None or not verify_password(req.password, user.hashed_password):
+            log_activity(
+                "user_login_failed",
+                status="failed",
+                details={"username": req.username},
+                ip_address=ip,
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid username or password",
@@ -119,6 +134,8 @@ def login(req: LoginRequest):
 
         access_token = create_access_token(user.id, user.role)
         refresh_token = create_refresh_token(user.id)
+
+        log_activity("user_login", user_id=user.id, ip_address=ip)
 
         return {
             "access_token": access_token,

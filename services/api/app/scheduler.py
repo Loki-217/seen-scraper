@@ -22,6 +22,7 @@ from .models_v2.schedule import (
     FieldConfig,
     PaginationConfig,
 )
+from .activity_log import log_activity
 from .robot_executor import RobotExecutor, save_results_to_file
 
 
@@ -198,11 +199,34 @@ class Scheduler:
 
             # 更新 Robot 统计
             robot_db = s.get(RobotDB, robot.id)
+            origin_url = robot_db.origin_url if robot_db else ""
             if robot_db:
                 robot_db.last_run_at = get_local_now()
                 robot_db.run_count += 1
 
+            # 获取 user_id from schedule
+            sched_user = schedule_db.user_id if schedule_db else None
+
             s.commit()
+
+        # Log schedule execution result
+        success = run_result['status'] == RunStatus.SUCCEEDED.value
+        log_activity(
+            "schedule_run_success" if success else "schedule_run_failed",
+            user_id=sched_user,
+            target_type="robot",
+            target_id=robot.id,
+            target_url=origin_url,
+            status="success" if success else "failed",
+            error_message=run_result.get('error_message'),
+            details={
+                "schedule_id": schedule_id,
+                "trigger_type": trigger_type,
+                "rows_extracted": run_result.get('items_extracted', 0),
+                "pages_scraped": run_result.get('pages_scraped', 0),
+                "duration_seconds": run_result.get('duration_seconds', 0),
+            },
+        )
 
         return run_id
 
