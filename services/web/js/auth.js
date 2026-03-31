@@ -100,4 +100,17 @@ function renderTopbarUser() {
     const user = getCurrentUser();
     const el = document.getElementById('topbarUsername');
     if (el && user) el.textContent = user.username;
+
+    // Show Admin link for admin users (if not already on admin page)
+    if (user && user.role === 'admin' && !window.location.pathname.includes('admin')) {
+        const container = el && el.parentElement;
+        if (container && !document.getElementById('adminLink')) {
+            const link = document.createElement('a');
+            link.id = 'adminLink';
+            link.href = '/admin.html';
+            link.textContent = 'Admin';
+            link.style.cssText = 'font-size:13px;color:#667eea;font-weight:500;text-decoration:none;margin-right:4px;';
+            container.insertBefore(link, container.firstChild);
+        }
+    }
 }

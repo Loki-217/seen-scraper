@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SeenFetch - Admin</title>
+  <link rel="stylesheet" href="css/admin.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
+</head>
+<body>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="topbar-brand">👁️ SeenFetch <span class="topbar-badge">Admin</span></div>
+    <div class="topbar-spacer"></div>
+    <a href="/">← Back to Home</a>
+    <div class="topbar-user">
+      <span id="topbarUsername"></span>
+      <button onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-item active" data-panel="dashboard" onclick="switchPanel('dashboard')">
+        <span>📊</span> <span>Dashboard</span>
+      </div>
+      <div class="sidebar-item" data-panel="users" onclick="switchPanel('users')">
+        <span>👥</span> <span>Users</span>
+      </div>
+      <div class="sidebar-item" data-panel="invite-codes" onclick="switchPanel('invite-codes')">
+        <span>🎟️</span> <span>Invite Codes</span>
+      </div>
+      <div class="sidebar-item" data-panel="logs" onclick="switchPanel('logs')">
+        <span>📋</span> <span>Activity Logs</span>
+      </div>
+    </nav>
+
+    <!-- Main content -->
+    <div class="main">
+
+      <!-- Dashboard Panel -->
+      <div id="panel-dashboard" class="panel active">
+        <h2 class="section-title">Dashboard</h2>
+        <div class="stat-row" id="statCards"></div>
+        <div class="chart-container">
+          <div class="chart-title">Executions — Last 7 Days</div>
+          <div class="bar-chart" id="barChart"></div>
+        </div>
+        <div class="table-card">
+          <div class="table-header"><h3>Recent Activity</h3></div>
+          <div class="activity-list" id="recentActivity"></div>
+        </div>
+      </div>
+
+      <!-- Users Panel -->
+      <div id="panel-users" class="panel">
+        <h2 class="section-title">User Management</h2>
+        <div class="table-card">
+          <div class="table-header">
+            <h3>All Users</h3>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Robots</th>
+                <th>Runs</th>
+                <th>Last Active</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Invite Codes Panel -->
+      <div id="panel-invite-codes" class="panel">
+        <h2 class="section-title">Invite Codes</h2>
+        <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;">
+          <label style="font-size:13px;color:#6b7280;">Generate</label>
+          <select id="codeCount" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+            <option value="1">1 code</option>
+            <option value="3">3 codes</option>
+            <option value="5">5 codes</option>
+            <option value="10">10 codes</option>
+          </select>
+          <button class="btn btn-primary" onclick="generateCodes()">Generate</button>
+        </div>
+        <div class="table-card">
+          <div class="table-header"><h3>All Invite Codes</h3></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Created</th>
+                <th>Used By</th>
+                <th>Used At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="codesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Activity Logs Panel -->
+      <div id="panel-logs" class="panel">
+        <h2 class="section-title">Activity Logs</h2>
+        <div class="filter-row">
+          <select id="filterAction">
+            <option value="">All Actions</option>
+            <option value="user_register">Register</option>
+            <option value="user_login">Login</option>
+            <option value="user_login_failed">Login Failed</option>
+            <option value="robot_create">Robot Create</option>
+            <option value="robot_update">Robot Update</option>
+            <option value="robot_delete">Robot Delete</option>
+            <option value="robot_run_success">Run Success</option>
+            <option value="robot_run_failed">Run Failed</option>
+            <option value="schedule_create">Schedule Create</option>
+            <option value="schedule_update">Schedule Update</option>
+            <option value="schedule_delete">Schedule Delete</option>
+            <option value="schedule_run_success">Sched Run OK</option>
+            <option value="schedule_run_failed">Sched Run Fail</option>
+          </select>
+          <select id="filterStatus">
+            <option value="">All Status</option>
+            <option value="success">Success</option>
+            <option value="failed">Failed</option>
+          </select>
+          <button class="btn btn-outline" onclick="loadActivityLogs(1)">Filter</button>
+        </div>
+        <div class="table-card">
+          <div class="table-header"><h3>Logs</h3></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Target</th>
+                <th>Status</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="logsTableBody"></tbody>
+          </table>
+          <div class="pagination" id="logsPagination"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- User Robots Modal -->
+  <div id="robotsModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+    <div class="modal-card" style="min-width:500px;max-width:640px;">
+      <div class="modal-title" id="robotsModalTitle">User Robots</div>
+      <div class="modal-body" id="robotsModalBody"></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="document.getElementById('robotsModal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/auth.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

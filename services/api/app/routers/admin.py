@@ -1,16 +1,19 @@
 # services/api/app/routers/admin.py
-"""Admin-only endpoints: activity logs + dashboard stats."""
+"""Admin-only endpoints: activity logs, stats, users, invite codes."""
 from __future__ import annotations
 
+import secrets
+import string
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, and_, cast, Date
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy import select, func, and_
 
 from ..auth import require_admin
 from ..db import session_scope
-from ..models import ActivityLogDB, UserDB, RobotDB, ScheduledRunDB
+from ..models import ActivityLogDB, UserDB, RobotDB, InviteCodeDB, ScheduledRunDB
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -147,3 +150,170 @@ def admin_stats(_admin: UserDB = Depends(require_admin)):
             "success_rate": success_rate,
             "daily_runs": daily_runs,
         }
+
+
+# ============ GET /admin/users ============
+
+@router.get("/users", summary="用户列表")
+def list_users(_admin: UserDB = Depends(require_admin)):
+    with session_scope() as s:
+        users = s.execute(
+            select(UserDB).order_by(UserDB.created_at.desc())
+        ).scalars().all()
+
+        items = []
+        for u in users:
+            robot_count = s.scalar(
+                select(func.count()).select_from(
+                    select(RobotDB.id).where(RobotDB.user_id == u.id).subquery()
+                )
+            ) or 0
+
+            run_actions = [
+                "robot_run_success", "robot_run_failed",
+                "schedule_run_success", "schedule_run_failed",
+            ]
+            total_runs = s.scalar(
+                select(func.count()).select_from(
+                    select(ActivityLogDB.id).where(and_(
+                        ActivityLogDB.user_id == u.id,
+                        ActivityLogDB.action.in_(run_actions),
+                    )).subquery()
+                )
+            ) or 0
+
+            last_log = s.execute(
+                select(ActivityLogDB.created_at)
+                .where(ActivityLogDB.user_id == u.id)
+                .order_by(ActivityLogDB.created_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+
+            items.append({
+                "id": u.id,
+                "username": u.username,
+                "email": u.email,
+                "role": u.role,
+                "is_active": u.is_active,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "robot_count": robot_count,
+                "total_runs": total_runs,
+                "last_active": last_log.isoformat() if last_log else None,
+            })
+
+        return {"items": items}
+
+
+# ============ PUT /admin/users/{user_id}/status ============
+
+class UserStatusRequest(BaseModel):
+    is_active: bool
+
+@router.put("/users/{user_id}/status", summary="启用/禁用用户")
+def update_user_status(
+    user_id: str,
+    req: UserStatusRequest,
+    admin: UserDB = Depends(require_admin),
+):
+    if user_id == admin.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot change your own status")
+
+    with session_scope() as s:
+        user = s.get(UserDB, user_id)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        user.is_active = req.is_active
+        s.commit()
+        return {
+            "id": user.id,
+            "username": user.username,
+            "is_active": user.is_active,
+        }
+
+
+# ============ GET /admin/users/{user_id}/robots ============
+
+@router.get("/users/{user_id}/robots", summary="查看用户的 Robot 列表")
+def list_user_robots(user_id: str, _admin: UserDB = Depends(require_admin)):
+    with session_scope() as s:
+        robots = s.execute(
+            select(RobotDB)
+            .where(RobotDB.user_id == user_id)
+            .order_by(RobotDB.updated_at.desc())
+        ).scalars().all()
+
+        return {"items": [{
+            "id": r.id,
+            "name": r.name,
+            "origin_url": r.origin_url,
+            "run_count": r.run_count,
+            "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        } for r in robots]}
+
+
+# ============ Invite Codes ============
+
+def _generate_code() -> str:
+    chars = string.ascii_uppercase + string.digits
+    body = ''.join(secrets.choice(chars) for _ in range(8))
+    return f"SF-{body}"
+
+
+class InviteCodeGenRequest(BaseModel):
+    count: int = 1
+
+
+@router.post("/invite-codes", status_code=201, summary="生成邀请码")
+def create_invite_codes(
+    req: InviteCodeGenRequest,
+    admin: UserDB = Depends(require_admin),
+):
+    count = max(1, min(req.count, 10))
+    codes = []
+    with session_scope() as s:
+        for _ in range(count):
+            code = _generate_code()
+            s.add(InviteCodeDB(code=code, created_by=admin.id))
+            codes.append(code)
+        s.commit()
+    return {"codes": codes}
+
+
+@router.get("/invite-codes", summary="邀请码列表")
+def list_invite_codes(_admin: UserDB = Depends(require_admin)):
+    with session_scope() as s:
+        rows = s.execute(
+            select(InviteCodeDB).order_by(InviteCodeDB.created_at.desc())
+        ).scalars().all()
+
+        # Pre-fetch usernames for used_by
+        user_ids = {r.used_by for r in rows if r.used_by}
+        usernames = {}
+        if user_ids:
+            users = s.execute(
+                select(UserDB.id, UserDB.username).where(UserDB.id.in_(user_ids))
+            ).all()
+            usernames = {uid: uname for uid, uname in users}
+
+        return {"items": [{
+            "code": r.code,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "used_by": usernames.get(r.used_by),
+            "used_at": r.used_at.isoformat() if r.used_at else None,
+        } for r in rows]}
+
+
+@router.delete("/invite-codes/{code}", summary="删除未使用的邀请码")
+def delete_invite_code(code: str, _admin: UserDB = Depends(require_admin)):
+    with session_scope() as s:
+        row = s.execute(
+            select(InviteCodeDB).where(InviteCodeDB.code == code)
+        ).scalar_one_or_none()
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite code not found")
+        if row.used_by:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete used invite code")
+        s.delete(row)
+        s.commit()
+        return {"ok": True}
