@@ -905,7 +905,24 @@ function renderStatusBadge(status) {
 }
 
 async function downloadRunResult(runId) {
-  window.open(`${API_BASE}/runs/${runId}/download`, '_blank');
+  try {
+    const res = await authFetch(`${API_BASE}/runs/${runId}/download`);
+    if (!res || !res.ok) throw new Error(`HTTP ${res?.status || 'no response'}`);
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : `result-${runId}.csv`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showToast('Failed to download: ' + err.message, 'error');
+  }
 }
 
 async function viewRunResult(runId) {

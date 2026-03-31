@@ -402,6 +402,7 @@ def cancel_run(run_id: str, current_user: UserDB = Depends(get_current_user)):
 @runs_router.get("/{run_id}/result", summary="获取执行结果")
 def get_run_result(run_id: str, current_user: UserDB = Depends(get_current_user)):
     """获取执行结果数据"""
+    import csv
     import json
     from pathlib import Path
 
@@ -419,8 +420,14 @@ def get_run_result(run_id: str, current_user: UserDB = Depends(get_current_user)
         if not result_path.exists():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="结果文件不存在")
 
-        with open(result_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        # Support both JSON and CSV result files
+        if result_path.suffix.lower() == '.json':
+            with open(result_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            with open(result_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                return list(reader)
 
 
 @runs_router.get("/{run_id}/download", summary="下载执行结果文件")
