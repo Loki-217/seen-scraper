@@ -25,7 +25,11 @@ class Settings(BaseSettings):
     app_description: str = "No-code web scraping tool for everyone"
 
 
-    cors_allow_origins: list[str] = Field(default_factory=lambda: ["*"])
+    cors_allow_origins: list[str] = Field(default_factory=lambda: [
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "*",
+    ])
     uvicorn_host: str = "127.0.0.1"
     uvicorn_port: int = 8000
 

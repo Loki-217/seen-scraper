@@ -94,6 +94,7 @@ def register(req: RegisterRequest, request: Request):
             hashed_password=hash_password(req.password),
         )
         s.add(user)
+        s.flush()  # ensure user row is visible for FK reference
 
         # Mark invite code used
         invite.used_by = user_id
