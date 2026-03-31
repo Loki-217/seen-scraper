@@ -4,20 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SeenFetch - Robot</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/robot.css" />
 </head>
 <body>
 
   <header class="topbar">
     <div class="topbar-inner">
-      <a class="topbar-brand" href="index.html">
-        <span class="brand-icon">&#x1F441;&#xFE0F;</span>
-        <span class="brand-text">SeenFetch</span>
+      <a class="topbar-brand logo" href="index.html">
+        <svg class="logo-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="4"/></svg>
+        <span class="logo-text">SeenFetch</span>
       </a>
       <div class="topbar-robot-name" id="topbarRobotName"></div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <span id="topbarUsername" style="color:#6b7280;font-size:13px;font-weight:500;"></span>
-        <button onclick="logout()" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;color:#374151;">Logout</button>
+        <span id="topbarUsername" style="color:var(--text-secondary);font-size:13px;font-weight:500;"></span>
+        <button onclick="logout()" style="background:none;border:1px solid var(--border-default);border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;color:var(--text-secondary);">Logout</button>
       </div>
     </div>
   </header>
@@ -65,8 +70,8 @@
                   <span class="data-count" id="dataCount"></span>
                 </div>
                 <div class="download-group">
-                  <button class="btn-download" id="btnDownloadCSV">&#x1F4E5; CSV</button>
-                  <button class="btn-download" id="btnDownloadJSON">&#x1F4E5; JSON</button>
+                  <button class="btn-download" id="btnDownloadCSV">CSV</button>
+                  <button class="btn-download" id="btnDownloadJSON">JSON</button>
                 </div>
               </div>
               <div class="table-wrapper">
@@ -83,8 +88,8 @@
 
           <!-- Action buttons -->
           <div class="actions">
-            <button class="btn-run" id="btnRun">&#x25B6; Run Task</button>
-            <button class="btn-delete" id="btnDelete">&#x1F5D1; Delete Robot</button>
+            <button class="btn-run" id="btnRun">Run Task</button>
+            <button class="btn-delete" id="btnDelete">Delete Robot</button>
           </div>
         </div>
 
@@ -92,7 +97,7 @@
         <aside class="steps-card">
           <p class="steps-intro">Set up your new robot in 2 quick steps:</p>
           <div class="step done">
-            <span class="step-icon">&#x2705;</span>
+            <span class="step-icon" style="color:var(--success);">&#x2713;</span>
             <span>Name the robot</span>
           </div>
           <div class="step current">
@@ -272,6 +277,7 @@
     </div>
   </div>
 
+  <script src="js/icons.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/robot.js"></script>
 </body>

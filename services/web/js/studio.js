@@ -270,7 +270,7 @@ async function closeSession() {
         empty.className = 'empty-state';
         empty.id = 'emptyState';
         empty.innerHTML = `
-            <div class="empty-icon">👁️</div>
+            <div class="empty-icon">${ICONS.scan(48)}</div>
             <p>Enter a URL and click <strong>Load</strong> to start</p>
             <p class="text-muted">Real-time page preview with element detection</p>
         `;
@@ -351,7 +351,7 @@ function renderInitialGuide(panel) {
         </button>
 
         <button class="guide-btn" disabled>
-            <span class="guide-btn-icon">📷</span>
+            <span class="guide-btn-icon">${ICONS.camera(18)}</span>
             <span class="guide-btn-text">Capture screenshot</span>
             <span class="guide-btn-arrow">›</span>
         </button>
@@ -368,7 +368,7 @@ function renderInitialGuide(panel) {
         <hr class="guide-divider">
 
         <div class="step-title">Step 1: Navigation</div>
-        <div class="step-detail">▶ Navigating to ${escapeHtml(truncate(url, 50)) || '...'}</div>
+        <div class="step-detail">Navigating to ${escapeHtml(truncate(url, 50)) || '...'}</div>
     `;
 }
 
@@ -378,7 +378,7 @@ function renderCaptureTypeGuide(panel) {
         <div class="guide-subtitle">How would you like to select data from this page?</div>
 
         <button class="guide-btn" onclick="startListCapture()">
-            <span class="guide-btn-icon">📋</span>
+            <span class="guide-btn-icon">${ICONS.list(18)}</span>
             <span class="guide-btn-text">From a list</span>
             <span class="guide-btn-arrow">›</span>
         </button>
@@ -392,7 +392,7 @@ function renderCaptureTypeGuide(panel) {
         <div class="guide-hint">For specific elements on the page</div>
 
         <button class="guide-btn guide-btn-success" onclick="startSmartDetect()">
-            <span class="guide-btn-icon">🤖</span>
+            <span class="guide-btn-icon">${ICONS.bot(18)}</span>
             <span class="guide-btn-text">Smart detect</span>
             <span class="guide-btn-arrow">›</span>
         </button>
@@ -444,7 +444,7 @@ function renderListSelectGuide(panel) {
 
         <hr class="guide-divider">
         <button class="guide-btn" onclick="switchToSmartDetect()" style="padding:10px 14px;font-size:13px;">
-            <span class="guide-btn-icon">🤖</span>
+            <span class="guide-btn-icon">${ICONS.bot(18)}</span>
             <span class="guide-btn-text">Use Smart Detect instead</span>
             <span class="guide-btn-arrow">›</span>
         </button>
@@ -728,7 +728,7 @@ function renderConfiguringGuide(panel) {
 
         <hr class="guide-divider">
         <button class="guide-btn guide-btn-success" onclick="runPreview()" ${configuredFields.length ? '' : 'disabled'}>
-            <span class="guide-btn-icon">👁</span>
+            <span class="guide-btn-icon">${ICONS.eye(18)}</span>
             <span class="guide-btn-text">Preview Data</span>
             <span class="guide-btn-arrow">›</span>
         </button>
@@ -776,7 +776,7 @@ function renderListPaginationSection() {
 
         <div class="step-title" style="margin-top:16px;">Step 4: Pagination</div>
         <button class="guide-btn" onclick="detectPagination()" style="padding:10px 14px;font-size:13px;margin-bottom:8px;">
-            <span class="guide-btn-icon">📄</span>
+            <span class="guide-btn-icon">${ICONS.fileText(18)}</span>
             <span class="guide-btn-text">Select Pagination Setting</span>
             <span class="guide-btn-arrow">›</span>
         </button>
@@ -1231,11 +1231,11 @@ function renderRecordedSteps() {
     }
 
     const icons = {
-        navigation: '\u25b6',       // ▶
-        interaction: '\u2197',      // ↗
-        captured_list: '\u2261',    // ≡
-        captured_text: 'T',
-        captured_screenshot: '\ud83d\udcf7'
+        navigation: ICONS.play(12),
+        interaction: ICONS.externalLink(12),
+        captured_list: ICONS.list(12),
+        captured_text: ICONS.type(12),
+        captured_screenshot: ICONS.camera(12)
     };
 
     const html = recordedSteps.map((step, i) => {
@@ -1355,7 +1355,7 @@ function saveAsRobot() {
     const fieldCount = configuredFields.length;
     const pgType = paginationConfig?.type || 'None';
 
-    showModal('💾 Save Robot', `
+    showModal(ICONS.save() + ' Save Robot', `
         <div class="modal-form-group">
             <label>Robot Name</label>
             <input type="text" id="robotName" placeholder="My Robot" autofocus>
@@ -1509,7 +1509,7 @@ function exportData() {
         return;
     }
 
-    showModal('📥 Export Data', `
+    showModal(ICONS.download() + ' Export Data', `
         <p style="text-align:center; margin-bottom:16px;">${items.length} items ready to export</p>
     `, [
         { text: 'CSV', class: 'btn btn-success', onclick: `downloadAsCSV(${JSON.stringify(JSON.stringify(items))}); closeModal()` },

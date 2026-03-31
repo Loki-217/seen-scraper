@@ -1,13 +1,6 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
-    background: #f9fafb;
-    color: #111827;
+    background: var(--bg-primary);
+    color: var(--text-primary);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -25,27 +18,28 @@ body {
     font-size: 40px;
     display: block;
     margin-bottom: 8px;
+    color: var(--accent-primary);
 }
 
 .login-header .brand-name {
     font-size: 24px;
     font-weight: 700;
-    color: #111827;
+    color: var(--text-primary);
 }
 
 .login-card {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
     padding: 32px;
     width: 100%;
     max-width: 400px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    box-shadow: var(--shadow-sm);
 }
 
 .tab-row {
     display: flex;
-    border-bottom: 2px solid #e5e7eb;
+    border-bottom: 2px solid var(--border-default);
     margin-bottom: 24px;
 }
 
@@ -56,7 +50,7 @@ body {
     border: none;
     font-size: 14px;
     font-weight: 600;
-    color: #9ca3af;
+    color: var(--text-tertiary);
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -2px;
@@ -64,8 +58,8 @@ body {
 }
 
 .tab-btn.active {
-    color: #667eea;
-    border-bottom-color: #667eea;
+    color: var(--accent-primary);
+    border-bottom-color: var(--accent-primary);
 }
 
 .tab-panel {
@@ -84,68 +78,74 @@ body {
     display: block;
     font-size: 13px;
     font-weight: 500;
-    color: #374151;
+    color: var(--text-secondary);
     margin-bottom: 6px;
 }
 
 .form-input {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
     font-size: 14px;
     outline: none;
-    transition: border-color 0.15s;
-    color: #111827;
-    background: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    font-family: var(--font-sans);
+}
+
+.form-input::placeholder {
+    color: var(--text-tertiary);
 }
 
 .form-input:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
 }
 
 .btn-submit {
     width: 100%;
     padding: 11px;
-    background: #667eea;
+    background: var(--accent-primary);
     color: #fff;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     margin-top: 8px;
     transition: background 0.15s;
+    font-family: var(--font-sans);
 }
 
 .btn-submit:hover {
-    background: #5a6fd6;
+    background: var(--accent-hover);
 }
 
 .btn-submit:disabled {
-    background: #a5b4fc;
+    opacity: 0.4;
     cursor: not-allowed;
 }
 
 .alert {
     padding: 10px 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     font-size: 13px;
     margin-top: 14px;
     display: none;
 }
 
 .alert.error {
-    background: #fef2f2;
-    color: #dc2626;
-    border: 1px solid #fecaca;
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
 .alert.success {
-    background: #f0fdf4;
-    color: #16a34a;
-    border: 1px solid #bbf7d0;
+    background: rgba(34, 197, 94, 0.1);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.2);
 }
 
 .alert.show {
@@ -154,7 +154,8 @@ body {
 
 @media (max-width: 440px) {
     .login-card {
-        border: none;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-default);
         border-radius: 0;
         padding: 24px 20px;
         box-shadow: none;

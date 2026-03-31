@@ -4,48 +4,48 @@
 
 /* ---------- CSS Variables ---------- */
 :root {
-    --primary: #667eea;
-    --primary-dark: #5a6fd6;
-    --primary-light: #8b9cf7;
-    --primary-bg: #f0f3ff;
-    --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --success: #10b981;
-    --success-bg: #ecfdf5;
-    --warning: #f59e0b;
-    --danger: #ef4444;
-    --blue: #3b82f6;
-    --blue-dark: #2563eb;
-    --gray-50: #f9fafb;
-    --gray-100: #f3f4f6;
-    --gray-200: #e5e7eb;
-    --gray-300: #d1d5db;
-    --gray-400: #9ca3af;
-    --gray-500: #6b7280;
-    --gray-600: #4b5563;
-    --gray-700: #374151;
-    --gray-800: #1f2937;
-    --text-primary: #111827;
-    --text-secondary: #6b7280;
-    --text-muted: #9ca3af;
-    --bg-page: #f8f9fb;
-    --bg-card: #ffffff;
-    --border: #e5e7eb;
-    --border-hover: #d1d5db;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
-    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08);
-    --radius-sm: 6px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    --primary: #8B5CF6;
+    --primary-dark: #7C3AED;
+    --primary-light: #A78BFA;
+    --primary-bg: rgba(139, 92, 246, 0.12);
+    --gradient: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%);
+    --success: #22C55E;
+    --success-bg: rgba(34, 197, 94, 0.1);
+    --warning: #F59E0B;
+    --danger: #EF4444;
+    --blue: #3B82F6;
+    --blue-dark: #2563EB;
+    --gray-50: #141416;
+    --gray-100: #1C1C1F;
+    --gray-200: #27272A;
+    --gray-300: #3F3F46;
+    --gray-400: #5C5C5F;
+    --gray-500: #8B8B8E;
+    --gray-600: #A1A1AA;
+    --gray-700: #D4D4D8;
+    --gray-800: #E4E4E7;
+    --text-primary: #EDEDEF;
+    --text-secondary: #8B8B8E;
+    --text-muted: #5C5C5F;
+    --bg-page: #0A0A0B;
+    --bg-card: #141416;
+    --border: #27272A;
+    --border-hover: #3F3F46;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+    --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
     /* Dark panel */
-    --panel-bg: #1e2a3a;
-    --panel-surface: rgba(255,255,255,0.06);
-    --panel-border: rgba(255,255,255,0.1);
-    --panel-text: #ffffff;
-    --panel-text-muted: rgba(255,255,255,0.5);
-    --panel-text-dim: rgba(255,255,255,0.35);
+    --panel-bg: #141416;
+    --panel-surface: rgba(255,255,255,0.04);
+    --panel-border: #27272A;
+    --panel-text: #EDEDEF;
+    --panel-text-muted: #8B8B8E;
+    --panel-text-dim: #5C5C5F;
 }
 
 /* ---------- Reset ---------- */
@@ -98,7 +98,7 @@ body {
     box-shadow: var(--shadow-md);
 }
 .btn-secondary {
-    background: white;
+    background: var(--bg-card);
     border: 1px solid var(--border);
     color: var(--text-primary);
 }
@@ -273,7 +273,7 @@ body {
 .browser-container {
     flex: 1;
     position: relative;
-    background: #1a1a1a;
+    background: #0A0A0B;
     overflow: hidden;
     min-height: 0;
 }
@@ -758,7 +758,7 @@ body {
     bottom: 0;
     left: 0;
     right: 0;
-    background: #0f1923;
+    background: var(--bg-card);
     border-radius: 12px 12px 0 0;
     box-shadow: 0 -4px 20px rgba(0,0,0,0.3);
     z-index: 50;
@@ -962,7 +962,7 @@ body {
     animation: fadeIn 0.2s ease;
 }
 .modal-card {
-    background: white;
+    background: var(--bg-card);
     max-width: 480px;
     width: 90%;
     border-radius: var(--radius-lg);
@@ -1074,7 +1074,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(102, 126, 234, 0.2);
+    background: rgba(139, 92, 246, 0.2);
     color: var(--primary-light);
     border-radius: 4px;
     font-size: 11px;

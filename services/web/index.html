@@ -4,20 +4,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SeenFetch - Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/home.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 </head>
 <body>
 
   <header class="topbar">
     <div class="topbar-inner">
-      <div class="topbar-brand">
-        <span class="brand-icon">👁️</span>
-        <span class="brand-text">SeenFetch</span>
+      <div class="topbar-brand logo">
+        <svg class="logo-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="4"/></svg>
+        <span class="logo-text">SeenFetch</span>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <span id="topbarUsername" style="color:#6b7280;font-size:13px;font-weight:500;"></span>
-        <button onclick="logout()" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;color:#374151;">Logout</button>
+        <span id="topbarUsername" style="color:var(--text-secondary);font-size:13px;font-weight:500;"></span>
+        <button onclick="logout()" style="background:none;border:1px solid var(--border-default);border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;color:var(--text-secondary);">Logout</button>
       </div>
     </div>
   </header>
@@ -38,6 +42,7 @@
     <div id="robotList" class="robot-list"></div>
   </main>
 
+  <script src="js/icons.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/home.js"></script>
 </body>

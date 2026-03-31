@@ -4,14 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SeenFetch - Admin</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/admin.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
 </head>
 <body>
 
   <!-- Topbar -->
   <div class="topbar">
-    <div class="topbar-brand">👁️ SeenFetch <span class="topbar-badge">Admin</span></div>
+    <div class="topbar-brand logo">
+      <svg class="logo-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="4"/></svg>
+      <span class="logo-text">SeenFetch</span>
+      <span class="topbar-badge">Admin</span>
+    </div>
     <div class="topbar-spacer"></div>
     <a href="/">← Back to Home</a>
     <div class="topbar-user">
@@ -24,16 +32,16 @@
     <!-- Sidebar -->
     <nav class="sidebar">
       <div class="sidebar-item active" data-panel="dashboard" onclick="switchPanel('dashboard')">
-        <span>📊</span> <span>Dashboard</span>
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg> <span>Dashboard</span>
       </div>
       <div class="sidebar-item" data-panel="users" onclick="switchPanel('users')">
-        <span>👥</span> <span>Users</span>
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> <span>Users</span>
       </div>
       <div class="sidebar-item" data-panel="invite-codes" onclick="switchPanel('invite-codes')">
-        <span>🎟️</span> <span>Invite Codes</span>
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></svg> <span>Invite Codes</span>
       </div>
       <div class="sidebar-item" data-panel="logs" onclick="switchPanel('logs')">
-        <span>📋</span> <span>Activity Logs</span>
+        <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> <span>Activity Logs</span>
       </div>
     </nav>
 
@@ -169,6 +177,7 @@
     </div>
   </div>
 
+  <script src="js/icons.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/admin.js"></script>
 </body>

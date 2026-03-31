@@ -71,9 +71,9 @@ function renderRobots(robots) {
   for (const [domain, domainRobots] of Object.entries(groups)) {
     html += `<div class="domain-group">
       <div class="domain-header">
-        <span>\uD83C\uDF10</span>
+        <span>${ICONS.globe()}</span>
         <span class="domain-name">${escapeHtml(domain)}</span>
-        <span>\uD83D\uDD17</span>
+        <span>${ICONS.link()}</span>
         <span class="domain-count">${domainRobots.length}</span>
       </div>
       <div class="domain-cards">`;
@@ -89,7 +89,7 @@ function renderRobots(robots) {
         <div class="robot-url">${escapeHtml(subPath)}</div>
         <div class="robot-footer">
           <span class="robot-time">${timeStr}</span>
-          <span class="robot-view">View \u2192</span>
+          <span class="robot-view">View ${ICONS.chevronRight()}</span>
         </div>
       </a>`;
     }

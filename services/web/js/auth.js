@@ -109,7 +109,7 @@ function renderTopbarUser() {
             link.id = 'adminLink';
             link.href = '/admin.html';
             link.textContent = 'Admin';
-            link.style.cssText = 'font-size:13px;color:#667eea;font-weight:500;text-decoration:none;margin-right:4px;';
+            link.style.cssText = 'font-size:13px;color:var(--accent-primary, #8B5CF6);font-weight:500;text-decoration:none;margin-right:4px;';
             container.insertBefore(link, container.firstChild);
         }
     }

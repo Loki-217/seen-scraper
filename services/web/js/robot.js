@@ -94,7 +94,7 @@ async function loadRobot(autorun) {
     return;
   }
 
-  document.getElementById('topbarRobotName').textContent = '\uD83E\uDD16 ' + robotData.name;
+  document.getElementById('topbarRobotName').textContent = robotData.name;
   document.getElementById('robotNameInput').value = robotData.name;
   document.title = `SeenFetch - ${robotData.name}`;
 
@@ -185,13 +185,13 @@ function showRunInfo({ success, originUrl, time, itemsExtracted, pagesScraped, e
   card.style.display = 'flex';
 
   document.getElementById('runInfoStatus').innerHTML = success
-    ? '\uD83E\uDD16 Finished successfully.'
-    : `\uD83E\uDD16 <span style="color:#ef4444">${escapeHtml(error || 'Failed')}</span>`;
+    ? 'Finished successfully.'
+    : `<span style="color:var(--error)">${escapeHtml(error || 'Failed')}</span>`;
 
   document.getElementById('runInfoUrl').textContent = originUrl || '';
-  document.getElementById('runInfoTime').innerHTML = `\u25CF ${formatRelativeTime(time)}`;
+  document.getElementById('runInfoTime').innerHTML = `${formatRelativeTime(time)}`;
   document.getElementById('runInfoStats').innerHTML =
-    `\u2261 ${itemsExtracted} items &nbsp; \uD83D\uDCC4 ${pagesScraped} pages`;
+    `${itemsExtracted} items &middot; ${pagesScraped} pages`;
 }
 
 function renderDataTable(items) {
@@ -228,7 +228,7 @@ async function saveName() {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     robotData.name = newName;
-    document.getElementById('topbarRobotName').textContent = '\uD83E\uDD16 ' + newName;
+    document.getElementById('topbarRobotName').textContent = newName;
     document.title = `SeenFetch - ${newName}`;
   } catch (err) {
     console.error('Failed to save name:', err);
@@ -327,14 +327,14 @@ function renderMonitorCard(s) {
   const enabled = s.enabled;
   const pausedClass = enabled ? '' : ' paused';
   const dotClass = enabled ? 'enabled' : 'paused';
-  const toggleLabel = enabled ? '\u23F8' : '\u25B6';
+  const toggleLabel = enabled ? ICONS.pause() : ICONS.play();
   const toggleTitle = enabled ? 'Pause' : 'Resume';
   const originUrl = robotData ? robotData.origin_url : '';
 
   return `
     <div class="monitor-card${pausedClass}">
       <div class="monitor-card-left">
-        <span class="monitor-icon">\uD83D\uDD50</span>
+        <span class="monitor-icon">${ICONS.clock(20)}</span>
         <div class="monitor-info">
           <div class="monitor-name-row">
             <span class="monitor-status-dot ${dotClass}"></span>
@@ -346,9 +346,9 @@ function renderMonitorCard(s) {
       </div>
       <div class="monitor-card-right">
         <div class="monitor-actions">
-          <button class="monitor-action-btn" data-action="edit" data-id="${s.id}" title="Edit">\u270F\uFE0F</button>
+          <button class="monitor-action-btn" data-action="edit" data-id="${s.id}" title="Edit">${ICONS.pencil()}</button>
           <button class="monitor-action-btn" data-action="toggle" data-id="${s.id}" title="${toggleTitle}">${toggleLabel}</button>
-          <button class="monitor-action-btn delete" data-action="delete" data-id="${s.id}" title="Delete">\uD83D\uDDD1</button>
+          <button class="monitor-action-btn delete" data-action="delete" data-id="${s.id}" title="Delete">${ICONS.trash()}</button>
         </div>
         <div class="monitor-timing">Last check: ${s.last_run_at ? formatRelativeTime(s.last_run_at) : 'never'}</div>
         <div class="monitor-timing">Next check: ${s.next_run_at ? formatFutureTime(s.next_run_at) : 'not scheduled'}</div>
@@ -868,8 +868,8 @@ async function loadHistory() {
 
       let actions = '';
       if (run.result_file) {
-        actions += `<button class="history-action-btn" onclick="downloadRunResult('${run.id}')" title="Download CSV">\uD83D\uDCE5</button>`;
-        actions += `<button class="history-action-btn" onclick="viewRunResult('${run.id}')" title="View JSON">\uD83D\uDCC4</button>`;
+        actions += `<button class="history-action-btn" onclick="downloadRunResult('${run.id}')" title="Download CSV">${ICONS.download()}</button>`;
+        actions += `<button class="history-action-btn" onclick="viewRunResult('${run.id}')" title="View JSON">${ICONS.fileText()}</button>`;
       }
 
       return `<tr>
@@ -894,11 +894,11 @@ async function loadHistory() {
 
 function renderStatusBadge(status) {
   const map = {
-    succeeded: { label: '\u2705 Succeeded', cls: 'succeeded' },
-    failed:    { label: '\u274C Failed',    cls: 'failed' },
-    running:   { label: '\u23F3 Running',   cls: 'running' },
-    pending:   { label: '\uD83D\uDD50 Pending',  cls: 'pending' },
-    cancelled: { label: '\u26D4 Cancelled', cls: 'failed' },
+    succeeded: { label: ICONS.checkCircle() + ' Succeeded', cls: 'succeeded' },
+    failed:    { label: ICONS.xCircle() + ' Failed',    cls: 'failed' },
+    running:   { label: ICONS.hourglass() + ' Running',   cls: 'running' },
+    pending:   { label: ICONS.clock() + ' Pending',  cls: 'pending' },
+    cancelled: { label: ICONS.ban() + ' Cancelled', cls: 'failed' },
   };
   const info = map[status] || { label: status, cls: 'pending' };
   return `<span class="status-badge ${info.cls}">${info.label}</span>`;

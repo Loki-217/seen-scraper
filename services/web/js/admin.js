@@ -263,7 +263,7 @@ function renderCodesTable(codes) {
                 <td>
                     <div class="code-display">
                         <span>${esc(c.code)}</span>
-                        <button class="btn btn-sm btn-outline" onclick="copyCode('${esc(c.code)}')" title="Copy">📋</button>
+                        <button class="btn btn-sm btn-outline" onclick="copyCode('${esc(c.code)}')" title="Copy">${ICONS.clipboard()}</button>
                     </div>
                 </td>
                 <td>${created}</td>
@@ -385,19 +385,19 @@ function renderLogsPagination(total, page, pageSize) {
 
 function formatAction(action) {
     const map = {
-        user_register: '🆕 Register',
-        user_login: '🔑 Login',
-        user_login_failed: '🚫 Login Failed',
-        robot_create: '🤖 Create Robot',
-        robot_update: '✏️ Update Robot',
-        robot_delete: '🗑️ Delete Robot',
-        robot_run_success: '✅ Run OK',
-        robot_run_failed: '❌ Run Fail',
-        schedule_create: '📅 Create Schedule',
-        schedule_update: '📅 Update Schedule',
-        schedule_delete: '📅 Delete Schedule',
-        schedule_run_success: '✅ Sched OK',
-        schedule_run_failed: '❌ Sched Fail',
+        user_register: ICONS.userPlus() + ' Register',
+        user_login: ICONS.key() + ' Login',
+        user_login_failed: ICONS.alertCircle() + ' Login Failed',
+        robot_create: ICONS.bot() + ' Create Robot',
+        robot_update: ICONS.pencil() + ' Update Robot',
+        robot_delete: ICONS.trash() + ' Delete Robot',
+        robot_run_success: ICONS.checkCircle() + ' Run OK',
+        robot_run_failed: ICONS.xCircle() + ' Run Fail',
+        schedule_create: ICONS.calendar() + ' Create Schedule',
+        schedule_update: ICONS.calendar() + ' Update Schedule',
+        schedule_delete: ICONS.calendar() + ' Delete Schedule',
+        schedule_run_success: ICONS.checkCircle() + ' Sched OK',
+        schedule_run_failed: ICONS.xCircle() + ' Sched Fail',
     };
     return map[action] || action;
 }
