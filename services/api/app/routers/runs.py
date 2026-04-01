@@ -70,7 +70,7 @@ def _crawl_with_crawler_runner(url: str) -> str:
     
     # 解析输出
     try:
-        output_text = result.stdout.decode('utf-8')
+        output_text = result.stdout.decode('utf-8-sig')
     except UnicodeDecodeError:
         try:
             output_text = result.stdout.decode('gbk')
