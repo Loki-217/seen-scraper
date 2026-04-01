@@ -422,10 +422,10 @@ def get_run_result(run_id: str, current_user: UserDB = Depends(get_current_user)
 
         # Support both JSON and CSV result files
         if result_path.suffix.lower() == '.json':
-            with open(result_path, 'r', encoding='utf-8') as f:
+            with open(result_path, 'r', encoding='utf-8-sig') as f:
                 return json.load(f)
         else:
-            with open(result_path, 'r', encoding='utf-8') as f:
+            with open(result_path, 'r', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
                 return list(reader)
 
